@@ -3,7 +3,7 @@ import {
   DB, Question, Round, answerText, bestScore, go, lastRoundSession, qStats, shuffle, store,
   streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, bookmarkedIds, buildDB, loadLocalRaw,
 } from "./lib";
-import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, useCloud } from "./cloud";
+import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
 import { ExamRunner, FlashRunner, PracticeRunner, RunSpec } from "./Runner";
 
@@ -513,7 +513,33 @@ function UploadButton({ onDone, label = "문항 데이터 올리기" }: { onDone
 
 const STATUS_TEXT = { off: "꺼짐", syncing: "맞추는 중…", ok: "맞춰짐", offline: "오프라인 · 연결되면 맞춰요", error: "오류" } as const;
 
-function Account({ reboot }: { reboot: () => void }) {
+/** 이 사본(같은 폴더에 문항 파일이 있는 비공개 링크)에서 바로 클라우드로 올리기 */
+function UploadLocal({ db, onDone }: { db: DB; onDone: () => void }) {
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      const n = await uploadFromLocal({ books: db.books, rounds: db.rounds, questions: db.questions }, setMsg);
+      setMsg(`${n}문항과 그림을 클라우드에 올렸어요. 이제 공개 사이트에서 로그인하면 바로 풀 수 있어요.`);
+      onDone();
+    } catch (e: any) {
+      setMsg(e.message || "올리지 못했어요.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <div className="row">
+        <button type="button" className="btn primary" disabled={busy} onClick={run}>{busy ? "올리는 중…" : "이 문항을 클라우드에 올리기"}</button>
+      </div>
+      {msg ? <p className="notice" role="status">{msg}</p> : null}
+    </>
+  );
+}
+
+function Account({ reboot, db, source }: { reboot: () => void; db: DB; source: "local" | "cloud" }) {
   const c = useCloud();
   if (!c.email)
     return (
@@ -534,6 +560,12 @@ function Account({ reboot }: { reboot: () => void }) {
         <button type="button" className="btn ghost" disabled={c.status === "syncing"} onClick={() => syncNow()}>지금 맞추기</button>
         <button type="button" className="btn ghost" onClick={() => signOut().then(reboot)}>로그아웃</button>
       </div>
+      {source === "local" ? (
+        <>
+          <p className="meta">지금 보는 문항({db.questions.length}개)을 클라우드로 보내면 공개 사이트와 다른 기기에서도 로그인만 하면 풀 수 있어요. 처음 한 번, 그리고 문항이 바뀌었을 때만 누르면 돼요.</p>
+          <UploadLocal db={db} onDone={() => {}} />
+        </>
+      ) : null}
       <details>
         <summary className="meta">문항 데이터 바꾸기</summary>
         <p className="meta">새로 받은 문항 묶음 파일(bioquiz-content….json)을 고르면 클라우드에 올라가고, 다른 기기는 다음에 열 때 받아요.</p>
@@ -565,7 +597,7 @@ function EmptyPage({ reboot }: { reboot: () => void }) {
   );
 }
 
-function Stats({ db, reboot }: { db: DB; reboot: () => void }) {
+function Stats({ db, reboot, source }: { db: DB; reboot: () => void; source: "local" | "cloud" }) {
   const st = useStore();
   const stats = qStats();
   const seen = Object.keys(stats).filter((id) => db.q[id]);
@@ -689,7 +721,7 @@ function Stats({ db, reboot }: { db: DB; reboot: () => void }) {
 
       <section aria-labelledby="acc-t">
         <h2 id="acc-t" className="section-title">계정 · 동기화</h2>
-        <Account reboot={reboot} />
+        <Account reboot={reboot} db={db} source={source} />
       </section>
 
       <section aria-labelledby="bak-t">
@@ -743,7 +775,7 @@ type Boot =
   | { kind: "loading" }
   | { kind: "login" }
   | { kind: "empty" }
-  | { kind: "ready"; db: DB; notice: string }
+  | { kind: "ready"; db: DB; notice: string; source: "local" | "cloud" }
   | { kind: "error"; msg: string };
 
 /** 문항을 어디서 가져올지 정한다.
@@ -756,13 +788,13 @@ async function bootApp(): Promise<Boot> {
       if (raw) {
         startAutoSync();
         syncNow();
-        return { kind: "ready", db: buildDB(raw), notice: offline ? "오프라인이에요. 기기에 받아 둔 문항으로 풀고, 기록은 연결되면 맞춰요." : "" };
+        return { kind: "ready", source: "cloud", db: buildDB(raw), notice: offline ? "오프라인이에요. 기기에 받아 둔 문항으로 풀고, 기록은 연결되면 맞춰요." : "" };
       }
       const local = await loadLocalRaw();
       if (!local) return { kind: "empty" };
       startAutoSync();
       syncNow();
-      return { kind: "ready", db: buildDB(local), notice: "" };
+      return { kind: "ready", source: "local", db: buildDB(local), notice: "" };
     } catch (e: any) {
       if (!isLoggedIn()) notice = e.message; // 로그인 만료
       else notice = `클라우드에서 문항을 받지 못했어요: ${e.message}`;
@@ -774,7 +806,7 @@ async function bootApp(): Promise<Boot> {
       startAutoSync();
       syncNow();
     }
-    return { kind: "ready", db: buildDB(local), notice };
+    return { kind: "ready", source: "local", db: buildDB(local), notice };
   }
   if (!isLoggedIn()) return { kind: "login" };
   return { kind: "error", msg: notice || "문항을 불러오지 못했어요." };
@@ -826,7 +858,7 @@ export function App() {
   else if (p0 === "play") view = <Play db={db} path={rest} query={route.query} />;
   else if (p0 === "result") view = <Result db={db} id={rest[0]} />;
   else if (p0 === "review") view = <Review db={db} />;
-  else if (p0 === "stats") view = <Stats db={db} reboot={reboot} />;
+  else if (p0 === "stats") view = <Stats db={db} reboot={reboot} source={boot.source} />;
   else view = <NotFound />;
 
   const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0;

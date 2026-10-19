@@ -12,8 +12,8 @@ SIMPLICITY Mini 생물 문제집(2022·2024·2025, 850문항)을 회차별로 �
 2. **가입 막기**: Authentication → Sign In / Providers → *Allow new users to sign up* 끄기.
 3. **내 계정 만들기**: Authentication → Users → Add user → Create new user (이메일·비밀번호, *Auto Confirm User* 켜기).
    처음 만든 계정 하나만 `members`에 자동으로 들어가고, 그 계정만 문항을 읽고 쓸 수 있다.
-4. **Pages 켜기**: GitHub 저장소 → Settings → Pages → Source를 *GitHub Actions*로.
-5. 사이트에서 로그인 → **문항 데이터 올리기**로 `bioquiz-content-….json` 파일을 고른다(따로 받은 비공개 파일).
+4. **배포**: main에 올리면 Actions가 빌드해 `gh-pages` 브랜치에 올리고, GitHub Pages가 그 브랜치를 보여 준다.
+5. **문항 올리기**: 문항이 들어 있는 비공개 사본에서 로그인 → 기록 → *이 문항을 클라우드에 올리기*. (또는 공개 사이트에서 묶음 파일을 골라 올린다.)
 
 앱에 들어 있는 Supabase 키는 공개용(publishable) 키다. 서비스 키(service_role / secret)는 어디에도 넣지 않는다.
 

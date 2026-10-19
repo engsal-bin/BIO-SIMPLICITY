@@ -176,6 +176,39 @@ export async function uploadBundle(text: string, onProgress: (msg: string) => vo
     throw new Error("JSON 파일이 아니에요.");
   }
   if (b?.format !== "bioquiz-content" || !Array.isArray(b.rows)) throw new Error("문항 묶음 파일(bioquiz-content)이 아니에요.");
+  return uploadRows(b.rows, onProgress);
+}
+
+function toDataURL(blob: Blob): Promise<string> {
+  return new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result as string);
+    r.onerror = () => no(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/** 지금 화면에 불러온 문항(같은 폴더의 파일)을 그대로 묶어서 올린다. 파일을 고를 필요가 없다 */
+export async function uploadFromLocal(raw: RawDB, onProgress: (msg: string) => void): Promise<number> {
+  const rows: { id: string; data: any }[] = [{ id: "meta", data: { books: raw.books, rounds: raw.rounds } }];
+  for (const b of raw.books) {
+    const qs = raw.questions.filter((q) => q.book_id === b.id);
+    const images: Record<string, string> = {};
+    for (const q of qs)
+      for (const p of [...(q.images || []), ...(q.explanation_images || [])]) {
+        if (images[p] || p.startsWith("data:")) continue;
+        onProgress(`그림 모으는 중… ${p}`);
+        const res = await fetch(p);
+        if (!res.ok) throw new Error(`그림을 읽지 못했어요: ${p}`);
+        images[p] = await toDataURL(await res.blob());
+      }
+    rows.push({ id: `book:${b.id}`, data: { questions: qs, images } });
+  }
+  return uploadRows(rows, onProgress);
+}
+
+async function uploadRows(rows: { id: string; data: any }[], onProgress: (msg: string) => void): Promise<number> {
+  const b = { rows };
   let n = 0;
   for (const r of b.rows) {
     onProgress(`올리는 중… ${r.id} (${n + 1}/${b.rows.length})`);

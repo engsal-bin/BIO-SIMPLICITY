@@ -1,4 +1,4 @@
-# main에 올라오면 app/을 빌드해 GitHub Pages에 배포한다.
+# main에 올라오면 app/을 빌드해 gh-pages 브랜치에 올린다(GitHub Pages가 이 브랜치를 보여 준다).
 # 저장소에는 코드만 있다. 문항은 로그인 후 Supabase에서 받는다.
 name: Deploy to GitHub Pages
 
@@ -8,16 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,17 +29,13 @@ jobs:
       - run: ./build.sh && rm -f dist/artifact.html
       - name: 문항·그림이 섞여 들어가지 않았는지 확인
         run: test ! -e dist/data && test ! -e dist/img
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: app/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: gh-pages 브랜치에 올리기
+        working-directory: app/dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "deploy ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

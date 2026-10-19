@@ -1,0 +1,15 @@
+# 문항·그림은 저작물이라 공개 저장소에 올리지 않는다(Supabase에만 둔다).
+*.pdf
+build/
+dist-private/
+review/fixes.json
+review_report.json
+app/public/data/
+app/public/img/
+*.bioquiz-content.json
+bioquiz-content*.json
+
+node_modules/
+app/dist/
+__pycache__/
+.DS_Store

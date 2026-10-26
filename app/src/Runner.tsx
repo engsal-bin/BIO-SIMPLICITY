@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { DB, Resp, Session, go, grade, store, uid } from "./lib";
+import { DB, Resp, Session, go, gradeDetail, store, uid } from "./lib";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
 
 export type RunSpec = {
@@ -42,9 +42,9 @@ export function ExamRunner({ db, spec }: { db: DB; spec: RunSpec }) {
   function submit() {
     const results: Record<string, boolean | null> = {};
     for (const x of qs) {
-      const g = grade(x, resps[x.id]);
-      results[x.id] = g;
-      if (g !== null) store.record(x.id, g, "round");
+      const g = gradeDetail(x, resps[x.id]);
+      results[x.id] = g.ok;
+      if (g.ok !== null) store.record(x.id, g.ok, "round", g.s);
     }
     const s: Session = {
       id: uid(),
@@ -140,14 +140,15 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
   const result = results[q.id];
   const cells: Cell[] = qs.map((x) => (x.id in results ? results[x.id] : "empty"));
 
-  function setResult(ok: boolean) {
-    store.record(q.id, ok, spec.kind);
+  function setResult(ok: boolean, s?: number) {
+    if (q.id in results) store.amendLast(q.id, ok);
+    else store.record(q.id, ok, spec.kind, s);
     setResults({ ...results, [q.id]: ok });
   }
   function check() {
     setRevealed({ ...revealed, [q.id]: true });
-    const g = grade(q, resps[q.id]);
-    if (g !== null) setResult(g);
+    const g = gradeDetail(q, resps[q.id]);
+    if (g.ok !== null) setResult(g.ok, g.s);
   }
   function finish() {
     const s: Session = {
@@ -185,7 +186,7 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
         <>
           {graded ? (
             <p className={`verdict ${result ? "ok" : "ng"}`} role="status">
-              {result ? "맞았어요" : "틀렸어요"}
+              {result ? "맞았어요" : partialText(q, resps[q.id]) || "틀렸어요"}
               {q.type === "blank" && !result ? (
                 <button type="button" className="link-btn" onClick={() => setResult(true)}>내 답도 맞아요</button>
               ) : null}
@@ -208,6 +209,15 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
       </div>
     </div>
   );
+}
+
+/** 빈칸형 일부만 맞았을 때 '3칸 중 2칸 맞았어요' */
+function partialText(q: DB["questions"][number], r: Resp): string {
+  if (q.type !== "blank") return "";
+  const g = gradeDetail(q, r);
+  if (!g.hits || g.ok) return "";
+  const n = g.hits.filter(Boolean).length;
+  return n ? `${g.hits.length}칸 중 ${n}칸 맞았어요` : "";
 }
 
 /* ───────── 플래시카드: 앞면 문제, 뒷면 정답+해설 ───────── */

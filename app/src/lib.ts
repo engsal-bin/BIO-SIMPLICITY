@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { TOPICS, TOPIC_CODES } from "./topics";
 
 /* ───────── 문항 데이터 ───────── */
 
@@ -23,6 +24,8 @@ export type Question = {
   version: number;
   hidden: boolean;
   note?: string | null;
+  /** 단원 이름(TOPICS의 name). 데이터에 없으면 topics.ts에서 채운다 */
+  topic?: string;
 };
 export type Book = { id: string; title: string; year: number; round_count: number };
 export type Round = { id: string; book_id: string; number: number; part: string | null; time_limit_sec: number; question_count: number };
@@ -36,7 +39,21 @@ export type DB = {
   questionsOf: Record<string, Question[]>;
   round: Record<string, Round>;
   book: Record<string, Book>;
+  /** 문항이 있는 단원(TOPICS 순서) */
+  topics: string[];
+  questionsOfTopic: Record<string, Question[]>;
 };
+
+export const TOPIC_NAMES = TOPICS.map((t) => t.name);
+export const topicShort = (name: string) => TOPICS.find((t) => t.name === name)?.short || name;
+const OTHER = "기타";
+
+function topicOf(q: Question): string {
+  if (q.topic && TOPIC_NAMES.includes(q.topic)) return q.topic;
+  const c = TOPIC_CODES[q.round_id]?.[q.number - 1];
+  const i = c ? c.charCodeAt(0) - 65 : -1;
+  return i >= 0 && i < TOPICS.length ? TOPICS[i].name : OTHER;
+}
 
 export type RawDB = { books: Book[]; rounds: Round[]; questions: Question[] };
 
@@ -52,52 +69,181 @@ export async function loadLocalRaw(): Promise<RawDB | null> {
 }
 
 export function buildDB(raw: RawDB): DB {
-  const db: DB = { ...raw, q: {}, roundsOf: {}, questionsOf: {}, round: {}, book: {} };
+  const db: DB = { ...raw, q: {}, roundsOf: {}, questionsOf: {}, round: {}, book: {}, topics: [], questionsOfTopic: {} };
   for (const b of db.books) db.book[b.id] = b;
   for (const r of db.rounds) {
     db.round[r.id] = r;
     (db.roundsOf[r.book_id] ||= []).push(r);
   }
   for (const q of db.questions) {
+    q.topic = topicOf(q);
     db.q[q.id] = q;
-    if (!q.hidden) (db.questionsOf[q.round_id] ||= []).push(q);
+    if (!q.hidden) {
+      (db.questionsOf[q.round_id] ||= []).push(q);
+      (db.questionsOfTopic[q.topic] ||= []).push(q);
+    }
   }
+  db.topics = [...TOPIC_NAMES, OTHER].filter((t) => db.questionsOfTopic[t]);
   return db;
 }
 
 /* ───────── 채점 ───────── */
 
-const norm = (s: string) =>
-  s.toLowerCase().normalize("NFC").replace(/[\s·\-_.,()（）'"`’‘“”=]/g, "");
+/* 빈칸 채점
+   - 띄어쓰기·문장부호·대소문자는 무시
+   - 같은 뜻의 다른 표기(중탄산염/중탄산이온, -에이스/-아제 등)는 같은 말로 본다
+   - 답을 더 길게 쓰거나(「DNA 리가아제」) 일부만 써도(「리가아제」) 낱말 단위로 맞으면 정답
+     (「부교감신경」 속 「교감신경」처럼 낱말 안에 숨은 글자는 인정하지 않는다)
+   - 오타: 첫 글자가 같고 자모 1~2개만 다르면 정답(영문·숫자가 다르면 안 됨: RNA/DNA, I/II) */
 
-export function blankMatches(input: string, accepted: string[]): boolean {
-  const x = norm(input || "");
-  if (!x) return false;
-  return accepted.some((a) => {
-    const y = norm(a);
-    if (!y) return false;
-    if (x === y) return true;
-    if (y.length >= 2 && x.includes(y)) return true;
-    return x.length >= 2 && y.includes(x) && x.length / y.length >= 0.6;
+const SYNONYMS: [RegExp, string][] = [
+  [/중탄산염|탄산수소이온|탄산수소염|중탄산/g, "중탄산이온"],
+  [/중탄산이온이온/g, "중탄산이온"],
+  [/결합력|친화력/g, "친화도"],
+  [/용적/g, "부피"],
+  [/난포/g, "여포"],
+  [/갑상선/g, "갑상샘"],
+  [/췌장/g, "이자"],
+  [/담즙/g, "쓸개즙"],
+  [/청소골/g, "이소골"],
+  [/털세포|유모세포/g, "유모세포"],
+  [/라이페이스|리파제/g, "리파아제"],
+  [/카이네이스|키나제/g, "키나아제"],
+  [/아밀레이스|아밀라제/g, "아밀라아제"],
+  [/세포자멸사|아폽토시스|apoptosis/g, "세포자멸사"],
+];
+
+/** 낱말 끝 '-에이스'를 '-아아제'로(헬리케이스 → 헬리카아제, 리게이스 → 리가아제) */
+function enzymeForm(s: string): string {
+  return s.replace(/([가-힣])이스/g, (m, ch: string) => {
+    const c = ch.charCodeAt(0) - 0xac00;
+    const vowel = Math.floor((c % 588) / 28); // 0=ㅏ … 5=ㅔ
+    if (vowel !== 5 || c % 28 !== 0) return m; // 받침 없는 'ㅔ'일 때만
+    return String.fromCharCode(0xac00 + c - 5 * 28) + "아제"; // ㅔ → ㅏ
   });
 }
 
+function canon(s: string): string {
+  let x = s.toLowerCase().normalize("NFC").replace(/[\s·\-_.,()（）'"`’‘“”=:;~→]/g, "");
+  x = enzymeForm(x);
+  for (const [re, to] of SYNONYMS) x = x.replace(re, to);
+  return x;
+}
+
+/** 괄호를 뺀 것, 괄호 안의 것도 정답 후보로 */
+function variants(a: string): string[] {
+  const out = [a];
+  const bare = a.replace(/\([^)]*\)/g, " ").trim();
+  if (bare && bare !== a) out.push(bare);
+  for (const m of a.matchAll(/\(([^)]*)\)/g)) for (const part of m[1].split(/[,，]/)) if (part.trim()) out.push(part.trim());
+  return out;
+}
+
+const tokens = (s: string) => s.split(/[\s,·/()（）]+/).map(canon).filter(Boolean);
+
+function windowsEqual(big: string[], target: string): boolean {
+  for (let i = 0; i < big.length; i++) {
+    let acc = "";
+    for (let j = i; j < big.length; j++) {
+      acc += big[j];
+      if (acc === target) return true;
+      if (acc.length >= target.length) break;
+    }
+  }
+  return false;
+}
+
+function jamo(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const c = ch.charCodeAt(0) - 0xac00;
+    if (c < 0 || c > 11171) {
+      out += ch;
+      continue;
+    }
+    out += String.fromCharCode(0x1100 + Math.floor(c / 588), 0x1161 + Math.floor((c % 588) / 28));
+    if (c % 28) out += String.fromCharCode(0x11a7 + (c % 28));
+  }
+  return out;
+}
+
+function lev(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function closeEnough(x: string, y: string): boolean {
+  if (x[0] !== y[0]) return false;
+  if (x.replace(/[^a-z0-9]/g, "") !== y.replace(/[^a-z0-9]/g, "")) return false;
+  if (x.startsWith(y) || y.startsWith(x) || x.endsWith(y) || y.endsWith(x)) return false;
+  const jx = jamo(x);
+  const jy = jamo(y);
+  const d = lev(jx, jy);
+  // 모음만 다르면(다이셔/다이서) 짧아도 오타로 본다. 자음이 다르면(리가아제/리파아제) 긴 말에서만
+  const consonants = (j: string) => j.replace(/[\u1161-\u1175]/g, "");
+  if (jy.length >= 6 && d === 1 && consonants(jx) === consonants(jy)) return true;
+  const allow = jy.length >= 16 ? 2 : jy.length >= 12 ? 1 : 0;
+  return allow > 0 && d <= allow;
+}
+
+export type BlankHit = "exact" | "typo" | false;
+
+export function blankMatch(input: string, accepted: string[]): BlankHit {
+  const x = canon(input || "");
+  if (!x) return false;
+  const xt = tokens(input || "");
+  let typo = false;
+  for (const a of accepted.flatMap(variants)) {
+    const y = canon(a);
+    if (!y) continue;
+    if (x === y) return "exact";
+    // 낱말 단위로 더 길게/짧게 쓴 경우. '결합', '피질'처럼 짧은 말은 너무 넓게 걸리므로 3글자 이상만
+    if (y.length >= 3 && y.length / x.length >= 0.5 && windowsEqual(xt, y)) return "exact";
+    if (x.length >= 3 && x.length / y.length >= 0.5 && windowsEqual(tokens(a), x)) return "exact";
+    if (closeEnough(x, y)) typo = true;
+  }
+  return typo ? "typo" : false;
+}
+
+export const blankMatches = (input: string, accepted: string[]) => blankMatch(input, accepted) !== false;
+
 export type Resp = number | string[] | string | null | undefined;
+
+export function blankAccepted(q: Question): string[][] {
+  return q.accepted_answers.length ? q.accepted_answers : ((q.answer as string[]) || []).map((a) => [a]);
+}
+
+/** 채점 결과. s = 부분 점수(0~1, 빈칸은 맞힌 칸 비율), hits = 빈칸별 판정 */
+export type GradeDetail = { ok: boolean | null; s?: number; hits?: BlankHit[] };
+
+export function gradeDetail(q: Question, r: Resp): GradeDetail {
+  if (q.type === "mcq") return { ok: typeof r === "number" && (q.answer as number[]).includes(r) };
+  if (q.type === "blank") {
+    const arr = Array.isArray(r) ? r : [];
+    const acc = blankAccepted(q);
+    if (!acc.length) return { ok: null };
+    const hits = acc.map((a, i) => blankMatch(arr[i] || "", a));
+    const n = hits.filter(Boolean).length;
+    return { ok: n === acc.length, s: n / acc.length, hits };
+  }
+  return { ok: null };
+}
 
 /** true/false = 자동 채점, null = 스스로 채점해야 함 */
 export function grade(q: Question, r: Resp): boolean | null {
-  if (q.type === "mcq") return typeof r === "number" && (q.answer as number[]).includes(r);
-  if (q.type === "blank") {
-    const arr = Array.isArray(r) ? r : [];
-    const acc = q.accepted_answers.length ? q.accepted_answers : ((q.answer as string[]) || []).map((a) => [a]);
-    return acc.length > 0 && acc.every((a, i) => blankMatches(arr[i] || "", a));
-  }
-  return null;
+  return gradeDetail(q, r).ok;
 }
 
 /* ───────── 학습 기록 (기기에 저장, 로그인하면 클라우드와 합쳐서 동기화) ───────── */
 
-export type Attempt = { q: string; ok: boolean; m: string; t: number };
+/** s = 부분 점수(빈칸형), u = 나중에 고친 시각(채점 정정) */
+export type Attempt = { q: string; ok: boolean; m: string; t: number; s?: number; u?: number };
+export const attemptScore = (a: Attempt) => (typeof a.s === "number" ? a.s : a.ok ? 1 : 0);
 export type Session = {
   id: string;
   kind: "round" | "practice" | "flash";
@@ -112,7 +258,7 @@ export type Session = {
   /** 마지막으로 고친 시각(스스로 채점 등). 동기화 때 더 최근 것을 남긴다 */
   u?: number;
 };
-export type Settings = { theme: "system" | "light" | "dark"; font: "m" | "l" };
+export type Settings = { theme: "system" | "light" | "dark"; font: "m" | "l"; regraded?: number };
 export type State = {
   attempts: Attempt[];
   sessions: Session[];
@@ -131,7 +277,12 @@ const attemptKey = (a: Attempt) => `${a.q}|${a.t}|${a.m}`;
 export function mergeState(a: SyncedState, b: SyncedState): SyncedState {
   const resetAt = Math.max(a.resetAt || 0, b.resetAt || 0);
   const att = new Map<string, Attempt>();
-  for (const x of [...(a.attempts || []), ...(b.attempts || [])]) if (x.t >= resetAt) att.set(attemptKey(x), x);
+  for (const x of [...(a.attempts || []), ...(b.attempts || [])]) {
+    if (x.t < resetAt) continue;
+    const k = attemptKey(x);
+    const old = att.get(k);
+    if (!old || (x.u || 0) > (old.u || 0)) att.set(k, x);
+  }
   const ses = new Map<string, Session>();
   for (const x of [...(a.sessions || []), ...(b.sessions || [])]) {
     if (x.startedAt < resetAt) continue;
@@ -155,6 +306,7 @@ export const syncedPart = (s: State): SyncedState => ({ attempts: s.attempts, se
 export const bookmarkedIds = (s: State) => Object.keys(s.bookmarks).filter((k) => s.bookmarks[k] > 0);
 
 const KEY = "bioquiz:v1";
+const REGRADE_VERSION = 1;
 const empty = (): State => ({ attempts: [], sessions: [], bookmarks: {}, settings: { theme: "system", font: "m" } });
 
 function read(): State {
@@ -187,8 +339,57 @@ export const store = {
     subs.add(f);
     return () => subs.delete(f);
   },
-  record(qid: string, ok: boolean, mode: string) {
-    commit({ ...state, attempts: [...state.attempts, { q: qid, ok, m: mode, t: Date.now() }] });
+  record(qid: string, ok: boolean, mode: string, s?: number) {
+    const a: Attempt = { q: qid, ok, m: mode, t: Date.now() };
+    if (typeof s === "number" && s < 1 && !ok) a.s = Math.round(s * 100) / 100;
+    commit({ ...state, attempts: [...state.attempts, a] });
+  },
+  /** 방금 채점한 것을 고친다(예: '내 답도 맞아요') */
+  amendLast(qid: string, ok: boolean) {
+    const i = state.attempts.map((a) => a.q).lastIndexOf(qid);
+    if (i < 0) return;
+    const next = state.attempts.slice();
+    const { s: _drop, ...rest } = next[i];
+    next[i] = { ...rest, ok, u: Date.now() };
+    commit({ ...state, attempts: next });
+  },
+  /** 채점 기준이 바뀌었을 때 지난 빈칸 답을 새 기준으로 다시 채점한다(한 번만) */
+  regradeBlanks(db: DB) {
+    if ((state.settings.regraded || 0) >= REGRADE_VERSION) return;
+    const sessions = [...state.sessions].sort((x, y) => x.startedAt - y.startedAt);
+    const now = Date.now();
+    let changed = 0;
+    const attempts = state.attempts.map((a) => {
+      const q = db.q[a.q];
+      // 맞음으로 된 것(직접 '맞아요'로 고친 것 포함)은 건드리지 않고, 틀림만 새 기준으로 다시 본다
+      if (!q || q.type !== "blank" || a.m === "flash" || a.u || a.ok) return a;
+      const ses = sessions.filter((x) => x.startedAt <= a.t && a.q in x.resps && x.results[a.q] !== undefined).pop();
+      if (!ses) return a;
+      const g = gradeDetail(q, ses.resps[a.q]);
+      if (g.ok === null) return a;
+      const s = g.ok ? undefined : Math.round((g.s || 0) * 100) / 100;
+      if (g.ok === a.ok && s === a.s) return a;
+      changed++;
+      const { s: _drop, ...rest } = a;
+      return { ...rest, ok: g.ok, ...(s !== undefined ? { s } : {}), u: now };
+    });
+    let touchedSessions = 0;
+    const sesNext = state.sessions.map((x) => {
+      let touched = false;
+      const results = { ...x.results };
+      for (const qid of Object.keys(x.resps)) {
+        const q = db.q[qid];
+        if (!q || q.type !== "blank" || x.kind === "flash" || results[qid] === undefined || results[qid] === true) continue;
+        const g = gradeDetail(q, x.resps[qid]);
+        if (g.ok === true) {
+          results[qid] = true;
+          touched = true;
+        }
+      }
+      if (touched) touchedSessions++;
+      return touched ? { ...x, results, u: now } : x;
+    });
+    commit({ ...state, attempts, sessions: sesNext, settings: { ...state.settings, regraded: REGRADE_VERSION } }, changed + touchedSessions > 0);
   },
   saveSession(s: Session) {
     const others = state.sessions.filter((x) => x.id !== s.id);
@@ -250,6 +451,58 @@ export function qStats(): Record<string, QStat> {
   }
   memo = { v: version, stats };
   return stats;
+}
+
+/* ───────── 단원별 정답률 ───────── */
+
+export type TopicStat = {
+  topic: string;
+  total: number;
+  seen: number;
+  /** 처음 풀었을 때 점수 평균(빈칸은 칸 비율) */
+  first: number | null;
+  /** 가장 최근 점수 평균 */
+  recent: number | null;
+  /** 문항 수가 적으면 전체 평균 쪽으로 당긴 값. 약한 단원 순서를 정할 때 쓴다 */
+  adjusted: number | null;
+  weak: boolean;
+};
+
+const SHRINK = 12;
+
+let tmemo: { v: number; db: DB | null; out: { list: TopicStat[]; overall: number | null } } = { v: -1, db: null, out: { list: [], overall: null } };
+export function topicStats(db: DB): { list: TopicStat[]; overall: number | null } {
+  if (tmemo.v === version && tmemo.db === db) return tmemo.out;
+  const first: Record<string, number> = {};
+  const last: Record<string, number> = {};
+  for (const a of [...state.attempts].sort((x, y) => x.t - y.t)) {
+    if (!db.q[a.q]) continue;
+    if (!(a.q in first)) first[a.q] = attemptScore(a);
+    last[a.q] = attemptScore(a);
+  }
+  const ids = Object.keys(first);
+  const overall = ids.length ? ids.reduce((x, id) => x + first[id], 0) / ids.length : null;
+  const list: TopicStat[] = db.topics.map((topic) => {
+    const qs = db.questionsOfTopic[topic] || [];
+    const seen = qs.filter((q) => q.id in first);
+    const sumF = seen.reduce((x, q) => x + first[q.id], 0);
+    const sumR = seen.reduce((x, q) => x + last[q.id], 0);
+    const n = seen.length;
+    const adjusted = n && overall !== null ? (sumF + SHRINK * overall) / (n + SHRINK) : null;
+    return { topic, total: qs.length, seen: n, first: n ? sumF / n : null, recent: n ? sumR / n : null, adjusted, weak: false };
+  });
+  if (overall !== null) for (const t of list) t.weak = t.seen >= 8 && t.adjusted !== null && t.adjusted < overall - 0.04;
+  tmemo = { v: version, db, out: { list, overall } };
+  return tmemo.out;
+}
+
+/** 약한 단원(보정 점수 낮은 순). 없으면 빈 배열 */
+export function weakTopics(db: DB, max = 3): string[] {
+  return topicStats(db)
+    .list.filter((t) => t.weak)
+    .sort((a, b) => (a.adjusted ?? 1) - (b.adjusted ?? 1))
+    .slice(0, max)
+    .map((t) => t.topic);
 }
 
 /** 오답노트: 한 번이라도 틀렸고, 그 뒤로 2번 연속 맞히지 못한 문항 */

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CIRCLED, Question, Resp, answerText, blankMatches, store, useStore } from "./lib";
+import { CIRCLED, Question, Resp, answerText, blankAccepted, blankMatch, store, useStore } from "./lib";
 
 /** 회차 진행 띠: 칸마다 정답(보라)·오답(분홍)·미채점·현재 */
 export type Cell = true | false | null | "answered" | "empty";
@@ -134,10 +134,10 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
         <div className="blanks">
           {Array.from({ length: blanks }, (_, i) => {
             const arr = Array.isArray(resp) ? resp : [];
-            const acc = q.accepted_answers[i] || [((q.answer as string[]) || [])[i] || ""];
-            const ok = reveal ? blankMatches(arr[i] || "", acc) : null;
+            const acc = blankAccepted(q)[i] || [((q.answer as string[]) || [])[i] || ""];
+            const hit = reveal ? blankMatch(arr[i] || "", acc) : null;
             return (
-              <label key={i} className={`blank ${ok === true ? "correct" : ok === false ? "wrong" : ""}`}>
+              <label key={i} className={`blank ${hit ? "correct" : hit === false ? "wrong" : ""}`}>
                 <span className="blank-mark">{i + 1}</span>
                 <input
                   value={arr[i] || ""}
@@ -152,7 +152,12 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
                     setResp && setResp(next);
                   }}
                 />
-                {reveal ? <span className="blank-ans">{((q.answer as string[]) || [])[i]}</span> : null}
+                {reveal ? (
+                  <span className="blank-ans">
+                    {hit === "typo" ? <span className="typo-tag">철자 확인</span> : null}
+                    {((q.answer as string[]) || [])[i]}
+                  </span>
+                ) : null}
               </label>
             );
           })}

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DB, Question, Round, answerText, bestScore, go, lastRoundSession, qStats, shuffle, store,
   streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, bookmarkedIds, buildDB, loadLocalRaw,
+  TOPIC_NAMES, topicShort, topicStats, weakTopics, gradeDetail,
 } from "./lib";
 import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
@@ -47,6 +48,10 @@ function bookProgress(db: DB, bookId: string) {
   return { done, total: rounds.length };
 }
 
+/** 단원 이름들 → 주소에 넣을 번호 목록 */
+const topicParam = (names: string[]) => names.map((n) => TOPIC_NAMES.indexOf(n)).filter((i) => i >= 0).join(",");
+const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
+
 /* ───────── 오늘 ───────── */
 
 function Home({ db }: { db: DB }) {
@@ -58,6 +63,7 @@ function Home({ db }: { db: DB }) {
   const streak = streakDays();
   const next = db.rounds.find((r) => !lastRoundSession(r.id));
   const lastSession = [...st.sessions].sort((a, b) => b.startedAt - a.startedAt)[0];
+  const weak = weakTopics(db);
 
   return (
     <main className="page">
@@ -99,6 +105,20 @@ function Home({ db }: { db: DB }) {
           <span className="qi-label">전체에서 랜덤 문제</span>
         </button>
       </section>
+
+      {weak.length ? (
+        <section className="review-block weak-block" aria-labelledby="weak-t">
+          <h2 id="weak-t" className="section-title">약한 단원</h2>
+          <div className="chips">
+            {weak.map((t) => <span key={t} className="chip weak">{topicShort(t)}</span>)}
+          </div>
+          <p className="meta">틀렸거나 안 풀어 본 문항부터 섞어서 나와요.</p>
+          <div className="row">
+            <button type="button" className="btn primary" onClick={() => go(`/play/random?t=${topicParam(weak)}&n=20&focus=1&mode=practice`)}>20문항 풀기</button>
+            <a className="btn ghost" href="#/stats">단원별 정답률</a>
+          </div>
+        </section>
+      ) : null}
 
       {lastSession ? (
         <p className="meta">
@@ -249,6 +269,8 @@ function Play({ db, path, query }: { db: DB; path: string[]; query: URLSearchPar
       const src = query.get("src") || "";
       const n = Number(query.get("n") || 15);
       const unseen = query.get("unseen") === "1";
+      const topics = (query.get("t") || "").split(",").filter(Boolean).map((i) => TOPIC_NAMES[Number(i)]).filter(Boolean);
+      const focus = query.get("focus") === "1";
       const stats = qStats();
       const pool = db.questions.filter(
         (q) =>
@@ -256,9 +278,14 @@ function Play({ db, path, query }: { db: DB; path: string[]; query: URLSearchPar
           (!books.length || books.includes(q.book_id)) &&
           (!types.length || types.includes(q.type === "essay" ? "short" : q.type)) &&
           (!src || (src === "none" ? !q.source : (q.source || "").startsWith(src))) &&
+          (!topics.length || topics.includes(q.topic || "")) &&
           (!unseen || !stats[q.id]),
       );
-      return { kind: mode === "flash" ? "flash" : "practice", title: "랜덤 문제", qids: shuffle(pool).slice(0, n).map((q) => q.id), back: "/review" };
+      // focus: 최근에 틀린 것 → 안 풀어 본 것 → 나머지 순으로 섞는다
+      const rank = (id: string) => (!stats[id] ? 1 : stats[id].last === false ? 0 : 2);
+      const ordered = focus ? [0, 1, 2].flatMap((r) => shuffle(pool.filter((q) => rank(q.id) === r))) : shuffle(pool);
+      const title = topics.length === 1 ? topicShort(topics[0]) : topics.length ? "약한 단원" : "랜덤 문제";
+      return { kind: mode === "flash" ? "flash" : "practice", title, qids: shuffle(ordered.slice(0, n)).map((q) => q.id), back: topics.length ? "/stats" : "/review" };
     }
     if (what === "retry") {
       const s = st.sessions.find((x) => x.id === arg);
@@ -318,12 +345,14 @@ function Result({ db, id }: { db: DB; id: string }) {
         {qs.map((q, i) => {
           const r = s.results[q.id];
           const isOpen = open === q.id || r === null;
+          const part = q.type === "blank" && r === false ? gradeDetail(q, s.resps[q.id]) : null;
+          const partLabel = part?.hits && part.hits.some(Boolean) ? `${part.hits.filter(Boolean).length}/${part.hits.length}칸` : "";
           return (
             <li key={q.id} className={`res ${r === true ? "ok" : r === false ? "ng" : "pend"}`}>
               <button type="button" className="res-head" aria-expanded={isOpen} onClick={() => setOpen(isOpen && r !== null ? null : q.id)}>
                 <span className="res-num">{i + 1}</span>
                 <span className="res-stem">{q.stem}</span>
-                <span className="res-mark">{r === true ? "정답" : r === false ? "오답" : "채점 필요"}</span>
+                <span className="res-mark">{r === true ? "정답" : r === false ? partLabel || "오답" : "채점 필요"}</span>
               </button>
               {isOpen ? (
                 <div className="res-body">
@@ -352,6 +381,8 @@ function Review({ db }: { db: DB }) {
   const [src, setSrc] = useState("");
   const [n, setN] = useState(15);
   const [unseen, setUnseen] = useState(false);
+  const [topics, setTopics] = useState<string[]>([]);
+  const weak = weakTopics(db);
   const stats = qStats();
   const pool = db.questions.filter(
     (q) =>
@@ -359,9 +390,11 @@ function Review({ db }: { db: DB }) {
       (!books.length || books.includes(q.book_id)) &&
       (!type || (q.type === "essay" ? "short" : q.type) === type) &&
       (!src || (src === "none" ? !q.source : (q.source || "").startsWith(src))) &&
+      (!topics.length || topics.includes(q.topic || "")) &&
       (!unseen || !stats[q.id]),
   ).length;
-  const qs = new URLSearchParams({ book: books.join(","), type, src, n: String(n), unseen: unseen ? "1" : "" });
+  const qs = new URLSearchParams({ book: books.join(","), type, src, n: String(n), unseen: unseen ? "1" : "", t: topicParam(topics) });
+  const weakOn = weak.length > 0 && weak.length === topics.length && weak.every((t) => topics.includes(t));
 
   return (
     <main className="page">
@@ -407,6 +440,21 @@ function Review({ db }: { db: DB }) {
             </div>
           </div>
           <div className="filter-row">
+            <span className="f-label">단원</span>
+            <div className="chips">
+              <button type="button" className={`chip-btn ${!topics.length ? "on" : ""}`} aria-pressed={!topics.length} onClick={() => setTopics([])}>전체</button>
+              {weak.length ? (
+                <button type="button" className={`chip-btn weak ${weakOn ? "on" : ""}`} aria-pressed={weakOn} onClick={() => setTopics(weakOn ? [] : weak)}>약한 단원</button>
+              ) : null}
+              {db.topics.map((t) => (
+                <button key={t} type="button" className={`chip-btn ${topics.includes(t) ? "on" : ""}`} aria-pressed={topics.includes(t)} title={t}
+                  onClick={() => setTopics(topics.includes(t) ? topics.filter((x) => x !== t) : [...topics, t])}>
+                  {topicShort(t)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-row">
             <span className="f-label">유형</span>
             <div className="chips">
               {[["", "전체"], ["mcq", "객관식"], ["blank", "빈칸"], ["short", "주관식"]].map(([v, l]) => (
@@ -446,6 +494,55 @@ function Review({ db }: { db: DB }) {
 }
 
 /* ───────── 기록 ───────── */
+
+/* ───────── 단원별 정답률 ───────── */
+
+function TopicSection({ db }: { db: DB }) {
+  useStore();
+  const { list, overall } = topicStats(db);
+  const weak = weakTopics(db);
+  const rows = [...list].sort((a, b) => (a.adjusted ?? 2) - (b.adjusted ?? 2));
+  return (
+    <section aria-labelledby="tp-t">
+      <h2 id="tp-t" className="section-title">단원별 정답률</h2>
+      <p className="meta">
+        처음 풀었을 때 기준이에요(빈칸은 맞힌 칸 비율). 전체 평균은 {pct(overall)}이고, 세로선이 평균 위치예요. 푼 문항이 적은 단원은 평균 쪽으로 보정해서 순서를 매겨요.
+      </p>
+      {weak.length ? (
+        <div className="row">
+          <button type="button" className="btn primary" onClick={() => go(`/play/random?t=${topicParam(weak)}&n=20&focus=1&mode=practice`)}>
+            약한 단원 20문항 풀기
+          </button>
+        </div>
+      ) : null}
+      <ul className="topic-list">
+        {rows.map((t) => (
+          <li key={t.topic} className={`topic-row ${t.weak ? "is-weak" : ""}`}>
+            <div className="tr-main">
+              <span className="tr-name" title={t.topic}>
+                {topicShort(t.topic)}
+                {t.weak ? <span className="chip weak">약함</span> : null}
+              </span>
+              <span className="tr-bar" role="img" aria-label={`처음 풀 때 정답률 ${pct(t.first)}`}>
+                <span className="tr-fill" style={{ width: `${(t.first ?? 0) * 100}%` }} />
+                {overall !== null ? <i className="tr-avg" style={{ left: `${overall * 100}%` }} /> : null}
+              </span>
+              <span className="tr-pct">{pct(t.first)}</span>
+            </div>
+            <div className="tr-foot">
+              <span className="meta">
+                {t.seen}/{t.total}문항 풂{t.recent !== null && t.seen ? ` · 최근 ${pct(t.recent)}` : ""}
+              </span>
+              <button type="button" className="link-btn" onClick={() => go(`/play/random?t=${topicParam([t.topic])}&n=15&focus=1&mode=practice`)}>
+                풀기
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /* ───────── 계정·동기화 ───────── */
 
@@ -699,6 +796,8 @@ function Stats({ db, reboot, source }: { db: DB; reboot: () => void; source: "lo
         </table>
       </section>
 
+      <TopicSection db={db} />
+
       <section aria-labelledby="set-t">
         <h2 id="set-t" className="section-title">설정</h2>
         <div className="filter-row">
@@ -824,6 +923,9 @@ export function App() {
   };
 
   useEffect(reboot, []);
+  useEffect(() => {
+    if (boot.kind === "ready") store.regradeBlanks(boot.db);
+  }, [boot]);
   useEffect(() => {
     const root = document.documentElement;
     if (st.settings.theme === "system") root.removeAttribute("data-theme");

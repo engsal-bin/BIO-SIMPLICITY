@@ -308,3 +308,22 @@ p { margin: 0 0 0.6em; }
 .account { display: grid; gap: 10px; margin-bottom: 20px; }
 .src-note { border-left: 3px solid var(--pend); padding: 8px 12px; background: color-mix(in srgb, var(--pend) 10%, var(--surface)); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: 0.92em; margin-bottom: 12px; }
 .src-note .label { font-weight: 600; margin-right: 6px; }
+
+/* 단원별 정답률 */
+.chip.weak { background: var(--eosin-soft); color: var(--eosin); margin-left: 6px; }
+.chip-btn.weak { border-color: color-mix(in srgb, var(--eosin) 45%, var(--line)); color: var(--eosin); }
+.chip-btn.weak.on { background: var(--eosin); border-color: var(--eosin); color: #fff; }
+.weak-block .chips { margin: 4px 0 8px; }
+.weak-block .chip.weak { margin-left: 0; }
+.topic-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
+.topic-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tr-main { display: grid; grid-template-columns: minmax(7.5em, 9.5em) 1fr 3.2em; align-items: center; gap: 10px; }
+.tr-name { font-weight: 600; font-size: 0.95em; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.tr-bar { position: relative; height: 10px; border-radius: 999px; background: var(--cell-empty); overflow: visible; }
+.tr-fill { display: block; height: 100%; border-radius: 999px; background: var(--hema); }
+.is-weak .tr-fill { background: var(--eosin); }
+.tr-avg { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink-2); border-radius: 1px; }
+.tr-pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.tr-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.typo-tag { display: inline-block; font-size: 0.78em; font-weight: 600; color: var(--pend); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; margin-right: 6px; }
+@media (max-width: 420px) { .tr-main { grid-template-columns: 6.5em 1fr 3em; } }

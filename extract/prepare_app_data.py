@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 KEEP = ("id", "book_id", "round_id", "number", "printed_number", "type", "stem", "passage", "statements",
-        "choices", "answer", "accepted_answers", "explanation", "explanation_images", "source", "images", "version", "note")
+        "choices", "answer", "accepted_answers", "explanation", "explanation_images", "source", "images", "version", "note", "topic")
 
 
 def compress(src: Path, dst: Path, max_w: int = 900):
@@ -24,6 +24,19 @@ def compress(src: Path, dst: Path, max_w: int = 900):
 def main():
     build, pub = Path(sys.argv[1]), Path(sys.argv[2])
     data = json.loads((build / "data" / "questions.json").read_text())
+    # 단원: review/topics.json(검수한 것) → 없으면 키워드로 추정
+    tpath = Path(__file__).resolve().parent.parent / "review" / "topics.json"
+    topics = json.loads(tpath.read_text()) if tpath.exists() else {}
+    guessed = 0
+    for q in data["questions"]:
+        if q["id"] in topics:
+            q["topic"] = topics[q["id"]]
+        else:
+            from topic_classify import classify
+            q["topic"] = classify(q)[0]
+            guessed += 1
+    if guessed:
+        print(f"단원을 추정한 문항 {guessed}개: review/topics.json에 확인해서 넣을 것")
     qs = []
     for q in data["questions"]:
         slim = {k: q[k] for k in KEEP if k in q}

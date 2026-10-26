@@ -28,7 +28,9 @@ app/
 extract/
   extract.py           PDF → questions.json + 그림
   review.py            검수(규칙 검사 + review/fixes.json 수정 적용, --ai 선택)
-  prepare_app_data.py  검수 결과 → app/public/data, img(그림 압축)
+  prepare_app_data.py  검수 결과 → app/public/data, img(그림 압축), 단원 태그
+  topic_classify.py    새 문항 단원 추정(키워드)
+  gen_topics_ts.py     review/topics.json → app/src/topics.ts
   make_bundle.py       app/public → 업로드용 묶음 파일(그림 포함 JSON)
 supabase/schema.sql    표·접근 규칙(RLS)
 .github/workflows/pages.yml
@@ -45,8 +47,17 @@ python3 extract/make_bundle.py app/public bioquiz-content.json
 ```
 
 만든 `bioquiz-content.json`을 앱의 기록 → 계정·동기화 → *문항 데이터 바꾸기*로 올린다. 책 단위로 나뉘어 있어 다른 기기는 바뀐 책만 다시 받는다.
-새 책 이름은 `extract.py`의 `BOOK_META`에 한 줄 추가한다. 검수에서 flagged된 문항은 앱에서 숨겨진다.
+새 책 이름은 `extract.py`의 `BOOK_META`에 한 줄 추가한다.
+단원: `review/topics.json`(문항 id → 단원, 검수한 것)에 없는 새 문항은 `prepare_app_data.py`가 키워드로 추정해 데이터에 `topic`으로 넣는다.
+확인한 뒤 `review/topics.json`에 넣고 `python3 extract/gen_topics_ts.py review/topics.json app/public/data/questions.json app/src/topics.ts`로 앱의 단원표를 다시 만든다. 검수에서 flagged된 문항은 앱에서 숨겨진다.
 `build/`, `review/fixes.json`, `app/public/data|img`, 묶음 파일은 문항 내용이 들어 있어 `.gitignore`로 빼 두었다.
+
+## 채점
+
+- 빈칸형: 칸마다 채점하고, 일부만 맞으면 부분 점수(맞힌 칸 비율)를 기록한다. 문항 정답은 모든 칸이 맞을 때만.
+- 띄어쓰기·문장부호 무시, 같은 뜻의 다른 표기(`lib.ts`의 `SYNONYMS`, -에이스/-아제) 인정, 낱말 단위로 더 길게/짧게 쓴 답 인정.
+- 오타: 첫 글자가 같고 모음 하나만 다르거나, 긴 말에서 자모 1~2개만 다르면 정답(＋'철자 확인' 표시). 영문·숫자가 다르면(DNA/RNA, I/II) 틀림.
+- 단원별 정답률은 처음 풀었을 때 점수 기준, 문항이 적은 단원은 전체 평균 쪽으로 보정해서 약한 단원을 고른다.
 
 ## 빌드
 

@@ -52,6 +52,14 @@ python3 extract/make_bundle.py app/public bioquiz-content.json
 확인한 뒤 `review/topics.json`에 넣고 `python3 extract/gen_topics_ts.py review/topics.json app/public/data/questions.json app/src/topics.ts`로 앱의 단원표를 다시 만든다. 검수에서 flagged된 문항은 앱에서 숨겨진다.
 `build/`, `review/fixes.json`, `app/public/data|img`, 묶음 파일은 문항 내용이 들어 있어 `.gitignore`로 빼 두었다.
 
+## 카드 탭
+
+컨닝페이퍼(마크다운 표)를 카드 덱으로 바꿔 넘기며 외운다. 오른쪽으로 밀면 알아요, 왼쪽은 몰라요, 탭하면 뒤집기. 미니 퀴즈는 4지선다.
+
+- 기본 덱: `app/src/decks/*.md` (`deckdata.ts`의 `BUILT_IN`에 등록)
+- 형식: `# 덱 이름`, `## 묶음 이름`, `| 항목 | 내용 |` 표의 각 줄이 카드 한 장
+- 앱의 카드 탭 → '붙여 넣어 만들기'로 새 덱을 만들 수 있고, 카드별 기억 상태와 함께 로그인하면 동기화된다.
+
 ## 채점
 
 - 빈칸형: 칸마다 채점하고, 일부만 맞으면 부분 점수(맞힌 칸 비율)를 기록한다. 문항 정답은 모든 칸이 맞을 때만.

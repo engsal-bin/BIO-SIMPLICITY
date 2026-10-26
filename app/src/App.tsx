@@ -7,6 +7,7 @@ import {
 import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
 import { ExamRunner, FlashRunner, PracticeRunner, RunSpec } from "./Runner";
+import { CardPlay, CardsHome } from "./Cards";
 
 /* ───────── 공통 ───────── */
 
@@ -14,6 +15,7 @@ const TABS = [
   { to: "/", key: "", label: "오늘", icon: "M4 11.5 12 5l8 6.5V20h-5v-5h-6v5H4z" },
   { to: "/books", key: "books", label: "문제집", icon: "M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h10" },
   { to: "/review", key: "review", label: "복습", icon: "M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" },
+  { to: "/cards", key: "cards", label: "카드", icon: "M8 6h11a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 19 20H8a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 8 6zM3.5 16.5V5A1.5 1.5 0 0 1 5 3.5h11" },
   { to: "/stats", key: "stats", label: "기록", icon: "M5 20V10m7 10V4m7 16v-7" },
 ];
 
@@ -952,7 +954,7 @@ export function App() {
   const db = boot.db;
 
   const [p0, ...rest] = route.path;
-  const playing = p0 === "play";
+  const playing = p0 === "play" || (p0 === "cards" && rest[0] === "play");
   let view: React.ReactNode;
   if (!p0) view = <Home db={db} />;
   else if (p0 === "books") view = <Books db={db} />;
@@ -962,6 +964,7 @@ export function App() {
   else if (p0 === "result") view = <Result db={db} id={rest[0]} />;
   else if (p0 === "review") view = <Review db={db} />;
   else if (p0 === "stats") view = <Stats db={db} reboot={reboot} source={boot.source} />;
+  else if (p0 === "cards") view = rest[0] === "play" ? <CardPlay query={route.query} /> : <CardsHome />;
   else view = <NotFound />;
 
   const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0;

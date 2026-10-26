@@ -267,9 +267,23 @@ export type State = {
   settings: Settings;
   /** '기록 모두 지우기' 한 시각. 이보다 앞선 기록은 동기화로 되살아나지 않는다 */
   resetAt?: number;
+  /** 직접 붙여 넣은 컨닝페이퍼(카드 덱). u = 마지막으로 고친 시각, deleted = 지운 흔적 */
+  decks?: Record<string, UserDeck>;
+  /** 카드별 기억 상태 */
+  cards?: Record<string, CardStat>;
 };
 
+export type UserDeck = { id: string; title: string; md: string; createdAt: number; u: number; deleted?: boolean };
+/** ok/ng = 알아요/몰라요 누른 횟수, last = 마지막 판정, t = 마지막 시각 */
+export type CardStat = { ok: number; ng: number; last: boolean; t: number };
+
 export type SyncedState = Omit<State, "settings">;
+
+function pickNewest<T>(a: Record<string, T> | undefined, b: Record<string, T> | undefined, time: (x: T) => number): Record<string, T> {
+  const out: Record<string, T> = { ...(a || {}) };
+  for (const [k, v] of Object.entries(b || {})) if (!(k in out) || time(v) > time(out[k])) out[k] = v;
+  return out;
+}
 
 const attemptKey = (a: Attempt) => `${a.q}|${a.t}|${a.m}`;
 
@@ -298,10 +312,12 @@ export function mergeState(a: SyncedState, b: SyncedState): SyncedState {
     sessions: [...ses.values()].sort((x, y) => x.startedAt - y.startedAt),
     bookmarks: bm,
     resetAt: resetAt || undefined,
+    decks: pickNewest(a.decks, b.decks, (d) => d.u),
+    cards: Object.fromEntries(Object.entries(pickNewest(a.cards, b.cards, (c) => c.t)).filter(([, c]) => c.t >= resetAt)),
   };
 }
 
-export const syncedPart = (s: State): SyncedState => ({ attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks, resetAt: s.resetAt });
+export const syncedPart = (s: State): SyncedState => ({ attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks, resetAt: s.resetAt, decks: s.decks, cards: s.cards });
 
 export const bookmarkedIds = (s: State) => Object.keys(s.bookmarks).filter((k) => s.bookmarks[k] > 0);
 
@@ -418,10 +434,30 @@ export const store = {
     const parsed = JSON.parse(text);
     const s = parsed.state ?? parsed;
     if (!Array.isArray(s.attempts) || !Array.isArray(s.sessions)) throw new Error("학습 기록 파일 형식이 아닙니다.");
-    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt }) });
+    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt, decks: s.decks, cards: s.cards }) });
   },
   reset() {
-    commit({ ...empty(), settings: state.settings, resetAt: Date.now() });
+    // 붙여 넣은 컨닝페이퍼는 기록이 아니므로 남긴다
+    commit({ ...empty(), settings: state.settings, resetAt: Date.now(), decks: state.decks });
+  },
+  /* 카드 */
+  markCard(id: string, ok: boolean) {
+    const c = state.cards?.[id] || { ok: 0, ng: 0, last: ok, t: 0 };
+    const next: CardStat = { ok: c.ok + (ok ? 1 : 0), ng: c.ng + (ok ? 0 : 1), last: ok, t: Date.now() };
+    commit({ ...state, cards: { ...(state.cards || {}), [id]: next } });
+  },
+  saveDeck(d: { id?: string; title: string; md: string }) {
+    const now = Date.now();
+    const id = d.id || "u-" + uid();
+    const old = state.decks?.[id];
+    const deck: UserDeck = { id, title: d.title, md: d.md, createdAt: old?.createdAt || now, u: now };
+    commit({ ...state, decks: { ...(state.decks || {}), [id]: deck } });
+    return id;
+  },
+  deleteDeck(id: string) {
+    const old = state.decks?.[id];
+    if (!old) return;
+    commit({ ...state, decks: { ...(state.decks || {}), [id]: { ...old, md: "", deleted: true, u: Date.now() } } });
   },
 };
 

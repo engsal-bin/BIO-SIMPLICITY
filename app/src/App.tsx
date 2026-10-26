@@ -923,9 +923,10 @@ export function App() {
   };
 
   useEffect(reboot, []);
+  // 새 채점 기준으로 지난 빈칸 오답 다시 보기: 처음 열 때, 기록을 불러오거나 다른 기기 기록이 합쳐질 때
   useEffect(() => {
     if (boot.kind === "ready") store.regradeBlanks(boot.db);
-  }, [boot]);
+  }, [boot, st.attempts.length]);
   useEffect(() => {
     const root = document.documentElement;
     if (st.settings.theme === "system") root.removeAttribute("data-theme");

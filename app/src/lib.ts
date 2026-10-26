@@ -258,7 +258,7 @@ export type Session = {
   /** 마지막으로 고친 시각(스스로 채점 등). 동기화 때 더 최근 것을 남긴다 */
   u?: number;
 };
-export type Settings = { theme: "system" | "light" | "dark"; font: "m" | "l"; regraded?: number };
+export type Settings = { theme: "system" | "light" | "dark"; font: "m" | "l" };
 export type State = {
   attempts: Attempt[];
   sessions: Session[];
@@ -306,7 +306,6 @@ export const syncedPart = (s: State): SyncedState => ({ attempts: s.attempts, se
 export const bookmarkedIds = (s: State) => Object.keys(s.bookmarks).filter((k) => s.bookmarks[k] > 0);
 
 const KEY = "bioquiz:v1";
-const REGRADE_VERSION = 1;
 const empty = (): State => ({ attempts: [], sessions: [], bookmarks: {}, settings: { theme: "system", font: "m" } });
 
 function read(): State {
@@ -353,9 +352,9 @@ export const store = {
     next[i] = { ...rest, ok, u: Date.now() };
     commit({ ...state, attempts: next });
   },
-  /** 채점 기준이 바뀌었을 때 지난 빈칸 답을 새 기준으로 다시 채점한다(한 번만) */
+  /** 지난 빈칸 오답을 지금 채점 기준으로 다시 본다.
+      바뀐 것이 없으면 아무것도 하지 않으므로, 기록을 불러오거나 다른 기기 기록이 합쳐질 때마다 불러도 된다. */
   regradeBlanks(db: DB) {
-    if ((state.settings.regraded || 0) >= REGRADE_VERSION) return;
     const sessions = [...state.sessions].sort((x, y) => x.startedAt - y.startedAt);
     const now = Date.now();
     let changed = 0;
@@ -389,7 +388,8 @@ export const store = {
       if (touched) touchedSessions++;
       return touched ? { ...x, results, u: now } : x;
     });
-    commit({ ...state, attempts, sessions: sesNext, settings: { ...state.settings, regraded: REGRADE_VERSION } }, changed + touchedSessions > 0);
+    if (changed + touchedSessions === 0) return;
+    commit({ ...state, attempts, sessions: sesNext });
   },
   saveSession(s: Session) {
     const others = state.sessions.filter((x) => x.id !== s.id);

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>한의학개론 문제은행</title>
+<meta name="description" content="한의학개론 1–15강 문제를 풀고 오답을 복습하는 개인 학습앱">
+<meta name="theme-color" content="#2f7d6b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="한의학 문제은행">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;600;700&display=swap">
+<style>
+html,body{margin:0;padding:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+</style>
+<link rel="stylesheet" href="app.css">
+<style>
+.gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--paper)}
+.gate-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
+.gate-err{color:var(--bad);font-size:13.5px;margin:0;min-height:1.2em}
+</style>
+</head>
+<body>
+<div id="gate" class="gate"><div class="gate-card"><div class="brand">한의학개론<small>문제은행</small></div><p class="muted">불러오는 중…</p></div></div>
+<div id="appRoot" hidden>
+<div class="app">
+  <aside class="rail" aria-label="메뉴">
+    <div class="brand">한의학개론<small id="brandSub">1–15강 문제은행</small></div>
+    <div class="dday"><span>시험까지 <b id="ddayNum">–</b></span><button id="ddayEdit" type="button">날짜</button></div>
+    <nav class="nav" id="nav"></nav>
+    <h4>오늘</h4>
+    <div id="todayBox" class="muted" style="font-size:13.5px"></div>
+    <p class="syncnote" id="syncNote">기록 저장 확인 중…</p>
+  </aside>
+  <div class="topbar" id="topbar"></div>
+  <main><div class="wrap" id="view"></div></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<div id="dlg" class="dlg" hidden></div>
+</div>
+<script src="app.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>

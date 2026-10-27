@@ -8,6 +8,8 @@ app/public/data/
 app/public/img/
 *.bioquiz-content.json
 bioquiz-content*.json
+hanui-content*.json
+hanui-기록*.json
 
 node_modules/
 app/dist/

@@ -27,8 +27,15 @@ jobs:
           bun-version: latest
       - run: bun install
       - run: ./build.sh && rm -f dist/artifact.html
+      - name: 한의학 문제은행(hanui/)을 같이 올리기
+        run: |
+          cp -r ../hanui dist/hanui
+          rm -f dist/hanui/schema.sql
+          sed -i "s/__VERSION__/$(date +%Y%m%d%H%M%S)/" dist/hanui/sw.js
       - name: 문항·그림이 섞여 들어가지 않았는지 확인
-        run: test ! -e dist/data && test ! -e dist/img
+        run: |
+          test ! -e dist/data && test ! -e dist/img
+          ! grep -rq '"nblank"' dist/hanui
       - name: gh-pages 브랜치에 올리기
         working-directory: app/dist
         env:

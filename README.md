@@ -74,3 +74,11 @@ cd app && bun install && ./build.sh     # dist/
 ```
 
 `app/public/data`가 있으면 그 문항으로 로그인 없이도 열린다(비공개 사본용). 없으면 로그인 화면부터 뜬다.
+
+## 한의학개론 문제은행 (`hanui/`)
+
+같은 사이트의 `/hanui/`에 따로 설치되는 두 번째 앱. 빌드 없이 정적 파일(`index.html`, `app.js`, `boot.js`, `app.css`)이고, 배포 워크플로가 `dist/hanui`로 복사한다.
+
+- 같은 Supabase 프로젝트·같은 계정을 쓰고, 표는 `hanui_content`(문항)·`hanui_state`(기록)를 따로 쓴다. 처음 한 번 `hanui/schema.sql`을 SQL Editor에서 실행한다.
+- 문항은 저장소에 없다. Claude가 만든 묶음 파일(`hanui-content-날짜.json`)을 앱에서 올린다: 처음엔 로그인 직후 화면, 그 뒤로는 기록 → 계정·데이터 → *기록·문항 가져오기*.
+- 묶음 파일 형식: `{ "format": "hanui-content", "rows": [{"id":"data","data":"<JSON 문자열>"}, {"id":"jydata", ...}], "progress"?: 기록 }`. `progress`가 있으면 지금 기록과 합친다(지우지 않는다).

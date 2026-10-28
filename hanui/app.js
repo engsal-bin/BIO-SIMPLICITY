@@ -42,6 +42,10 @@ function mergeState(remote){
   out.exam = S.exam || remote.exam || ''; out.prefs = Object.assign({}, remote.prefs||{}, S.prefs||{});
   out.days = {}; [remote.days||{}, S.days||{}].forEach(src => { for (const [d,m] of Object.entries(src)){ const o = out.days[d] || (out.days[d] = {}); for (const [k,v] of Object.entries(m)) o[k] = (k in o) ? (((o[k]|v)&1) | ((o[k]&v)&2)) : v; } });
   out.rvp = {}; [remote.rvp||{}, S.rvp||{}].forEach(src => { for (const [k,p] of Object.entries(src)){ const o = out.rvp[k] || (out.rvp[k] = { d:[], s:[] }); (p.d||[]).forEach(x => { if (!o.d.includes(x)) o.d.push(x); }); (p.s||[]).forEach(x => { if (!o.s.includes(x) && !o.d.includes(x)) o.s.push(x); }); o.s = o.s.filter(x => !o.d.includes(x)); } });
+  /* 카드 탭: 덱·폴더·덱 정리는 마지막에 고친 쪽(u), 카드 기억은 마지막에 넘긴 쪽(t) */
+  const newest = (a, b, f) => { const o = Object.assign({}, a||{}); for (const [k,v] of Object.entries(b||{})){ if (!o[k] || f(v) >= f(o[k])) o[k] = v; } return o; };
+  out.decks = newest(remote.decks, S.decks, d => d.u||0); out.deckMeta = newest(remote.deckMeta, S.deckMeta, d => d.u||0);
+  out.folders = newest(remote.folders, S.folders, d => d.u||0); out.cards = newest(remote.cards, S.cards, c => c.t||0);
   out.routine = {}; [remote.routine||{}, S.routine||{}].forEach((src,li) => { for (const [d,r] of Object.entries(src)){ const o = out.routine[d] || (out.routine[d] = { a:{}, m:{} }); Object.assign(o.a, r.a||{}); if (li===1 || !Object.keys(o.m).length) o.m = Object.assign({}, r.m||{}); } });
   return out;
 }
@@ -108,10 +112,10 @@ const chName = n => (CH.find(c => c.n===n)||{}).name || '';
 /* ---------------- routing ---------------- */
 let view = 'home', session = null;
 function go(v){ view = v; if (v !== 'quiz' && v !== 'result') session = session && session.done ? session : session; render(); window.scrollTo(0,0); }
-const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습'],['notes','복습 노트'],['stats','기록']];
+const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습'],['cards','카드'],['notes','복습 노트'],['stats','기록']];
 function navHTML(cur){
   const wrong = ITEMS.filter(i => isActiveWrong(i.id)).length, bm = Object.keys(S.bm).length;
-  return NAV.map(([k,l]) => `<button type="button" data-go="${k}" aria-current="${cur===k||(cur==='quiz'&&k==='setup')||(cur==='result'&&k==='setup')||(String(cur).startsWith('jy')&&k===(typeof JG!=='undefined'?JG:'jy'))}">${l}${k==='notes'?`<span class="cnt">${wrong} · ★${bm}</span>`:''}</button>`).join('');
+  return NAV.map(([k,l]) => `<button type="button" data-go="${k}" aria-current="${cur===k||(cur==='quiz'&&k==='setup')||(cur==='result'&&k==='setup')||(String(cur).startsWith('jy')&&k===(typeof JG!=='undefined'?JG:'jy'))}">${l}${k==='notes'?`<span class="cnt">${wrong} · ★${bm}</span>`:''}${k==='cards'&&CARDS?(n => n?`<span class="cnt">${n}</span>`:'')(CARDS.dueCount()):''}</button>`).join('');
 }
 function renderChrome(){
   $('#nav').innerHTML = navHTML(view);
@@ -126,7 +130,7 @@ function renderChrome(){
 function ddayText(){ if (!S.exam) return ''; const t = new Date(S.exam+'T00:00:00'), n = new Date(today()+'T00:00:00');
   const d = Math.round((t-n)/86400000); return d>0 ? 'D-'+d : d===0 ? 'D-day' : 'D+'+(-d); }
 document.addEventListener('click', e => {
-  const g = e.target.closest('[data-go]'); if (g){ go(g.dataset.go); }
+  const g = e.target.closest('[data-go]'); if (g){ if (g.dataset.go==='cards' && CARDS) CARDS.home(); go(g.dataset.go); }
 });
 $('#ddayEdit').addEventListener('click', openExamDlg);
 function openExamDlg(){
@@ -148,10 +152,12 @@ function render(){
   else if (view==='notes') v.innerHTML = notesHTML();
   else if (view==='stats') v.innerHTML = statsHTML();
   else if (view==='rvdone') v.innerHTML = rvDoneHTML();
+  else if (view==='cards' && CARDS) CARDS.render(v);
   else if (String(view).startsWith('jy') || view==='sl' || view==='zg') jyRender(v);
   bindView();
   if (String(view).startsWith('jy') || view==='sl' || view==='zg') jyBind();
   rvBind();
+  if (view==='cards' && CARDS) CARDS.bind();
   if (view==='stats' && hooks.mountAccount) hooks.mountAccount($('#acctPanel'));
 }
 
@@ -642,9 +648,9 @@ function act(a, el){
     case 'note-start': startSession(notesFiltered(), {order:'random', count:0}); break;
     case 'reset': {
       const dlg = $('#dlg'); dlg.hidden = false;
-      dlg.innerHTML = `<div role="dialog" aria-label="기록 초기화"><h2>기록을 모두 지울까요?</h2><p class="muted" style="margin:0">맞힘·틀림 횟수, 북마크, 메모가 모두 사라지고 되돌릴 수 없어요.</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button" id="dlgCancel">취소</button><button class="btn primary" type="button" id="dlgOk" style="background:var(--bad);border-color:var(--bad)">모두 지우기</button></div></div>`;
+      dlg.innerHTML = `<div role="dialog" aria-label="기록 초기화"><h2>기록을 모두 지울까요?</h2><p class="muted" style="margin:0">맞힘·틀림 횟수, 북마크, 메모, 카드 기억(알아요·몰라요)이 모두 사라지고 되돌릴 수 없어요. 만든 카드 덱은 남아요.</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button" id="dlgCancel">취소</button><button class="btn primary" type="button" id="dlgOk" style="background:var(--bad);border-color:var(--bad)">모두 지우기</button></div></div>`;
       $('#dlgCancel').onclick = () => dlg.hidden = true;
-      $('#dlgOk').onclick = () => { S.st = {}; S.bm = {}; S.memo = {}; S.daily = {}; S.days = {}; S.rvp = {}; S.routine = {}; persist(); dlg.hidden = true; render(); toast('기록을 지웠어요'); };
+      $('#dlgOk').onclick = () => { S.st = {}; S.bm = {}; S.memo = {}; S.daily = {}; S.days = {}; S.rvp = {}; S.routine = {}; S.cards = {}; persist(); dlg.hidden = true; render(); toast('기록을 지웠어요'); };
       break; }
   }
 }
@@ -1463,6 +1469,8 @@ function rvBind(){
   v.querySelectorAll('[data-jmemo]').forEach(t => t.oninput = () => { const id = t.dataset.jmemo; if (t.value.trim()) S.memo[id] = t.value; else delete S.memo[id]; persist(); });
 }
 
+/* 카드 탭 (cards.js) */
+var CARDS = window.HanuiCards ? window.HanuiCards({ getS: () => S, persist, toast, esc, shuffle, go: v => go(v), rerender: () => render(), isActive: () => view==='cards' }) : null;
 applyTheme();
 render();
 /* 다른 곳에서 가져온 기록(예: 예전 Claude 아티팩트)을 지금 기록과 합친다 */

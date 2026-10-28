@@ -2,7 +2,7 @@
 // Supabase 요청은 캐시하지 않는다. 배포할 때 워크플로가 VERSION을 바꿔 새로 받게 한다.
 const VERSION = "__VERSION__";
 const CACHE = `hanui-${VERSION}`;
-const CORE = ["./", "index.html", "app.js", "boot.js", "app.css", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CORE = ["./", "index.html", "app.js", "cards.js", "boot.js", "app.css", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));

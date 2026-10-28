@@ -87,3 +87,4 @@ cd app && bun install && ./build.sh     # dist/
 - 같은 Supabase 프로젝트·같은 계정을 쓰고, 표는 `hanui_content`(문항)·`hanui_state`(기록)를 따로 쓴다. 처음 한 번 `hanui/schema.sql`을 SQL Editor에서 실행한다.
 - 문항은 저장소에 없다. Claude가 만든 묶음 파일(`hanui-content-날짜.json`)을 앱에서 올린다: 처음엔 로그인 직후 화면, 그 뒤로는 기록 → 계정·데이터 → *기록·문항 가져오기*.
 - 묶음 파일 형식: `{ "format": "hanui-content", "rows": [{"id":"data","data":"<JSON 문자열>"}, {"id":"jydata", ...}], "progress"?: 기록 }`. `progress`가 있으면 지금 기록과 합친다(지우지 않는다).
+- 카드 탭(`hanui/cards.js`): 생물 미니의 카드 기능(덱 목록·넘기기·미니 퀴즈·오늘 다시 볼 카드·덱 편집기·폴더/고정/보관)을 빌드 없는 JS로 옮긴 것. 기본 덱 없이 시작하고, 앱에서 덱을 만든다(`cards.js`의 `BUILT_IN`에 넣으면 기본 덱). 덱·카드 기억은 `hanui_state` 기록(`decks`, `cards`, `deckMeta`, `folders`)에 함께 저장·동기화된다.

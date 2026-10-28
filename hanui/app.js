@@ -108,7 +108,7 @@ const chName = n => (CH.find(c => c.n===n)||{}).name || '';
 /* ---------------- routing ---------------- */
 let view = 'home', session = null;
 function go(v){ view = v; if (v !== 'quiz' && v !== 'result') session = session && session.done ? session : session; render(); window.scrollTo(0,0); }
-const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['notes','복습 노트'],['stats','기록']];
+const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습'],['notes','복습 노트'],['stats','기록']];
 function navHTML(cur){
   const wrong = ITEMS.filter(i => isActiveWrong(i.id)).length, bm = Object.keys(S.bm).length;
   return NAV.map(([k,l]) => `<button type="button" data-go="${k}" aria-current="${cur===k||(cur==='quiz'&&k==='setup')||(cur==='result'&&k==='setup')||(String(cur).startsWith('jy')&&k===(typeof JG!=='undefined'?JG:'jy'))}">${l}${k==='notes'?`<span class="cnt">${wrong} · ★${bm}</span>`:''}</button>`).join('');
@@ -148,9 +148,9 @@ function render(){
   else if (view==='notes') v.innerHTML = notesHTML();
   else if (view==='stats') v.innerHTML = statsHTML();
   else if (view==='rvdone') v.innerHTML = rvDoneHTML();
-  else if (String(view).startsWith('jy') || view==='sl') jyRender(v);
+  else if (String(view).startsWith('jy') || view==='sl' || view==='zg') jyRender(v);
   bindView();
-  if (String(view).startsWith('jy') || view==='sl') jyBind();
+  if (String(view).startsWith('jy') || view==='sl' || view==='zg') jyBind();
   rvBind();
   if (view==='stats' && hooks.mountAccount) hooks.mountAccount($('#acctPanel'));
 }
@@ -654,13 +654,15 @@ function applyTheme(){ const t = S.prefs.theme; if (t) document.documentElement.
 const JI = JD.items, JBY = {}; JI.forEach(i => JBY[i.id] = i);
 const JLA = JD.lecs, JLN = {}, JLG = {}; JLA.forEach(l => { JLN[l.id] = l.t; JLG[l.id] = l.g || 'jy'; });
 var JG = 'jy';
-const SUBJ = { jy: { name: '집요 복습', lk: 'jyLecs', desc: '집요 수업노트' }, sl: { name: '생리학 복습', lk: 'slLecs', desc: '생리학 수업노트' } };
+const SUBJ = { jy: { name: '집요 복습', lk: 'jyLecs', desc: '집요 수업노트', short: '집요' }, sl: { name: '생리학 복습', lk: 'slLecs', desc: '생리학 수업노트', short: '생리학' }, zg: { name: '총강 복습', lk: 'zgLecs', desc: '한의학총강 수업노트', short: '총강' } };
+const JGS = Object.keys(SUBJ);
 const JLg = () => JLA.filter(l => (l.g||'jy') === JG);
 const LK = () => SUBJ[JG].lk;
 const RD = JD.rd;
 const jkey = (id,k) => id + '#' + k;
 pdef('jyLecs', JLA.filter(l=>(l.g||'jy')==='jy').map(l=>l.id));
-if (JD.alias && Array.isArray(P.jyLecs)){ const valid = new Set(JLA.map(l=>l.id)); P.jyLecs = [...new Set(P.jyLecs.map(x => JD.alias[x] || x))].filter(x => valid.has(x)); } pdef('slLecs', JLA.filter(l=>l.g==='sl').map(l=>l.id)); pdef('jyMode','choice'); pdef('jyPool','all'); pdef('jyOrder','seq'); pdef('jyCount', 20); pdef('jyCards', 50);
+if (JD.alias && Array.isArray(P.jyLecs)){ const valid = new Set(JLA.map(l=>l.id)); P.jyLecs = [...new Set(P.jyLecs.map(x => JD.alias[x] || x))].filter(x => valid.has(x)); } pdef('slLecs', JLA.filter(l=>l.g==='sl').map(l=>l.id)); pdef('zgLecs', JLA.filter(l=>l.g==='zg').map(l=>l.id)); pdef('zgSeen', []);
+{ const seen = new Set(P.zgSeen), add = JLA.filter(l => l.g==='zg' && !seen.has(l.id)).map(l => l.id); if (add.length){ add.forEach(id => { if (!P.zgLecs.includes(id)) P.zgLecs.push(id); }); P.zgSeen = [...seen, ...add]; } } pdef('jyMode','choice'); pdef('jyPool','all'); pdef('jyOrder','seq'); pdef('jyCount', 20); pdef('jyCards', 50);
 
 /* ---- answer matching: 한자 또는 독음 ---- */
 const HG = c => c >= '가' && c <= '힣';
@@ -1024,14 +1026,14 @@ function jMigrateK(){
 }
 function jyRender(v){
   jMigrateK();
-  if (view==='jy' || view==='sl'){ JG = view; v.innerHTML = jHomeHTML(); }
+  if (view==='jy' || view==='sl' || view==='zg'){ JG = view; v.innerHTML = jHomeHTML(); }
   else if (view==='jyq'){ if (!JQ){ view=JG; return jyRender(v); } v.innerHTML = jQuizHTML(); }
   else if (view==='jyc'){ if (!JC){ view=JG; return jyRender(v); } v.innerHTML = jCardHTML(); }
   else if (view==='jyr'){ if (!JR){ view=JG; return jyRender(v); } v.innerHTML = jResultHTML(); }
 }
 function jyBind(){
   const v = $('#view');
-  v.querySelectorAll('[data-pref^="jy"],[data-pref="slLecs"]').forEach(b => b.onclick = () => {
+  v.querySelectorAll('[data-pref^="jy"],[data-pref="slLecs"],[data-pref="zgLecs"]').forEach(b => b.onclick = () => {
     const k = b.dataset.pref, multi = b.dataset.multi==='1'; let val = b.dataset.v;
     if (multi){ const arr = P[k]; const i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); }
     else P[k] = val;
@@ -1161,20 +1163,20 @@ function keyInfo(k){
   const i = k.indexOf('#');
   if (i < 0) return BYID[k] ? { t:'b', id:k } : null;
   const id = k.slice(0,i), it = JBY[id]; if (!it) return null;
-  return { t: JLG[it.l]==='sl' ? 'sl' : 'jy', id, k: +k.slice(i+1) };
+  return { t: SUBJ[JLG[it.l]] ? JLG[it.l] : 'jy', id, k: +k.slice(i+1) };
 }
 function rvSet(d){
   const m = DAYS()[d] || {};
-  const bank = new Map(), J = { jy:new Map(), sl:new Map() };
+  const bank = new Map(), J = { jy:new Map(), sl:new Map(), zg:new Map() };
   for (const [k,v] of Object.entries(m)){
     const inf = keyInfo(k); if (!inf) continue;
     if (inf.t==='b'){ const u = bank.get(inf.id) || { id:inf.id, x:false, fresh:false }; if (v&1) u.x = true; if (!(v&2)) u.fresh = true; bank.set(inf.id, u); }
     else { const mp = J[inf.t]; const u = mp.get(inf.id) || { id:inf.id, solved:[], wrong:[], fresh:false }; u.solved.push(inf.k); if (v&1) u.wrong.push(inf.k); if (!(v&2)) u.fresh = true; mp.set(inf.id, u); }
   }
   const why = u => { const r = []; if (u.x || (u.wrong && u.wrong.length)) r.push('x'); if (u.fresh && S.bm[u.id]) r.push('bm'); if (u.fresh && S.memo[u.id]) r.push('memo'); return r; };
-  const out = { d, bank:[], jy:[], sl:[], n:{ x:0, bm:0, memo:0 }, solved: bank.size + J.jy.size + J.sl.size, keys: Object.keys(m).length };
+  const out = { d, bank:[], jy:[], sl:[], zg:[], n:{ x:0, bm:0, memo:0 }, solved: bank.size + J.jy.size + J.sl.size + J.zg.size, keys: Object.keys(m).length };
   bank.forEach(u => { const w = why(u); if (!w.length) return; out.bank.push({ key:'b:'+u.id, t:'b', id:u.id, why:w, grad: u.x && !isActiveWrong(u.id) }); });
-  ['jy','sl'].forEach(g => J[g].forEach(u => {
+  JGS.forEach(g => J[g].forEach(u => {
     const w = why(u); if (!w.length) return;
     const it = JBY[u.id];
     const tg = [...new Set(u.wrong.length ? u.wrong : u.solved)].filter(k => it.a[k]).sort((a,b) => a-b);
@@ -1182,8 +1184,8 @@ function rvSet(d){
     const grad = u.wrong.length > 0 && u.wrong.every(k => !isActiveWrong(jkey(u.id,k)));
     out[g].push({ key:'j:'+u.id, t:g, id:u.id, tg, why:w, grad });
   }));
-  out.bank.sort((a,b) => BIDX[a.id]-BIDX[b.id]); out.jy.sort((a,b) => JIDX[a.id]-JIDX[b.id]); out.sl.sort((a,b) => JIDX[a.id]-JIDX[b.id]);
-  out.all = [...out.bank, ...out.jy, ...out.sl];
+  out.bank.sort((a,b) => BIDX[a.id]-BIDX[b.id]); JGS.forEach(g => out[g].sort((a,b) => JIDX[a.id]-JIDX[b.id]));
+  out.all = [...out.bank, ...out.jy, ...out.sl, ...out.zg];
   out.all.forEach(u => u.why.forEach(w => out.n[w]++));
   return out;
 }
@@ -1228,7 +1230,7 @@ function setSummary(set){
   const parts = [];
   if (set.n.x) parts.push(`오답 ${set.n.x}`); if (set.n.bm) parts.push(`★${set.n.bm}`); if (set.n.memo) parts.push(`메모 ${set.n.memo}`);
   const sub = [];
-  if (set.bank.length) sub.push(`문제은행 ${set.bank.length}`); if (set.jy.length) sub.push(`집요 ${set.jy.length}`); if (set.sl.length) sub.push(`생리학 ${set.sl.length}`);
+  if (set.bank.length) sub.push(`문제은행 ${set.bank.length}`); if (set.jy.length) sub.push(`집요 ${set.jy.length}`); if (set.sl.length) sub.push(`생리학 ${set.sl.length}`); if (set.zg.length) sub.push(`총강 ${set.zg.length}`);
   return { reasons: parts.join(' · '), subj: sub.join(' · ') };
 }
 function rvRoutineHTML(){
@@ -1249,14 +1251,14 @@ function rvRoutineHTML(){
           <div class="rt-s">${label}</div>
           ${!r.empty ? `<div class="rt-prog"><div class="bar"><i style="width:${pct}%"></i></div><span>${r.st.handled}/${r.st.total}</span></div>` : ''}</div>
         <div class="rt-go">${btn}</div></div>`; }).join('')}</div>
-    <div class="rt-foot"><span class="flabel">빈칸(집요·생리) 푸는 방식</span>${['choice','short','card'].map(m => `<button type="button" class="chip" data-rvmode="${m}" aria-pressed="${(P.rvMode||'choice')===m}">${m==='choice'?'선지형':m==='short'?'단답형':'카드형'}</button>`).join('')}</div>
+    <div class="rt-foot"><span class="flabel">빈칸(집요·생리·총강) 푸는 방식</span>${['choice','short','card'].map(m => `<button type="button" class="chip" data-rvmode="${m}" aria-pressed="${(P.rvMode||'choice')===m}">${m==='choice'?'선지형':m==='short'?'단답형':'카드형'}</button>`).join('')}</div>
     <div class="rt-week">${week.map(d => { const n = dayDoneCount(d); const solved = Object.keys(DAYS()[d]||{}).length; const isT = d===T;
       return `<button type="button" class="rt-day${isT?' today':''}${d>T?' future':''}" data-ntday="${d}" ${d>T?'disabled':''} aria-label="${mdLabel(d)} 루틴 ${n}/3">
         <span class="w">${DOW[new Date(d+'T00:00:00').getDay()]}</span><span class="dot f${n}"></span><span class="c">${solved?solved:''}</span></button>`; }).join('')}</div>
   </div>`;
 }
 
-/* ---- 복습 세션: 문제은행 → 집요 → 생리학 ---- */
+/* ---- 복습 세션: 문제은행 → 집요 → 생리학 → 총강 ---- */
 let RVS = null;
 const RVNAME = { d0:'오늘 정리', d1:'어제 복습', d7:'7일 전 복습', cal:'날짜별 복습' };
 function rvStart(kind, d){
@@ -1264,7 +1266,7 @@ function rvStart(kind, d){
   let left = u => !p.d.includes(u.key) && !p.s.includes(u.key);
   if (!set.all.length){ toast('복습할 문제가 없어요'); return; }
   if (!set.all.some(left)){ p.d = []; p.s = []; left = () => true; toast('다시 처음부터 풀어요'); }
-  const phases = [['b',set.bank],['jy',set.jy],['sl',set.sl]].map(([t,us]) => ({ t, units: us.filter(left) })).filter(x => x.units.length);
+  const phases = [['b',set.bank],['jy',set.jy],['sl',set.sl],['zg',set.zg]].map(([t,us]) => ({ t, units: us.filter(left) })).filter(x => x.units.length);
   RVS = { pk, d, kind, set, phases, pi:-1, label: RVNAME[kind] + ' · ' + mdLabel(d) };
   persist(); rvNextPhase();
 }
@@ -1288,7 +1290,7 @@ function rvSkip(key){ if (!RVS) return; const p = rvProg(RVS.pk); if (!p.d.inclu
 function rvQuit(){ toast('진행 상황을 저장했어요. 홈에서 이어서 풀 수 있어요'); RVS = null; session = null; JQ = null; JC = null; view = 'home'; render(); window.scrollTo(0,0); }
 function rvPhaseLabel(){
   if (!RVS) return '';
-  const ph = RVS.phases[RVS.pi]; const names = RVS.phases.map((p,i) => `<span class="${i===RVS.pi?'on':i<RVS.pi?'past':''}">${p.t==='b'?'문제은행':p.t==='jy'?'집요':'생리학'} ${p.units.length}</span>`).join('<i>→</i>');
+  const ph = RVS.phases[RVS.pi]; const names = RVS.phases.map((p,i) => `<span class="${i===RVS.pi?'on':i<RVS.pi?'past':''}">${p.t==='b'?'문제은행':SUBJ[p.t].short} ${p.units.length}</span>`).join('<i>→</i>');
   return `<div class="rv-bar"><b>${esc(RVS.label)}</b><span class="rv-steps">${names}</span></div>`;
 }
 function rvTagsHTML(key){
@@ -1337,7 +1339,7 @@ function perChips(){
 function notesHTML(){
   if (!NT.date) NT.date = today();
   if (!NT.month) NT.month = NT.date.slice(0,7);
-  const tabs = [['bank','문제은행'],['jy','집요 복습'],['sl','생리학 복습']];
+  const tabs = [['bank','문제은행'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습']];
   const head = `<h1>복습 노트</h1>
   <div class="seg" role="tablist">${tabs.map(([k,l]) => `<button type="button" role="tab" data-ntsubj="${k}" aria-selected="${NT.subj===k}">${l}</button>`).join('')}</div>
   <div class="seg sm" role="tablist">${[['list','모아보기'],['date','날짜별']].map(([k,l]) => `<button type="button" role="tab" data-ntmode="${k}" aria-selected="${NT.mode===k}">${l}</button>`).join('')}</div>`;
@@ -1410,7 +1412,7 @@ function calHTML(){
       <div class="row" style="justify-content:space-between"><h2>${mdLabel(NT.date)}</h2><span class="muted">푼 문항·빈칸 ${set.keys}</span></div>
       ${set.all.length ? `<div>${sm.reasons}<br><span class="muted">${sm.subj}</span></div>
         <div class="rt-prog"><div class="bar"><i style="width:${st.total?Math.round(st.handled/st.total*100):0}%"></i></div><span>${st.handled}/${st.total}</span></div>
-        <div class="row"><button class="btn primary" type="button" data-rvcal="${NT.date}">${st.handled && !st.done ? '이어서 풀기' : '이 세트 풀기'}</button><span class="muted" style="font-size:12.5px">문제은행 → 집요 → 생리학 순서</span></div>`
+        <div class="row"><button class="btn primary" type="button" data-rvcal="${NT.date}">${st.handled && !st.done ? '이어서 풀기' : '이 세트 풀기'}</button><span class="muted" style="font-size:12.5px">문제은행 → 집요 → 생리학 → 총강 순서</span></div>`
         : `<div class="muted">${set.solved ? '이 날은 오답·북마크·메모가 없어요.' : '이 날 푼 기록이 없어요.'}</div>`}
     </div>
   </div>

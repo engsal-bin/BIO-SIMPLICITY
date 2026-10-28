@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { go, shuffle, store, useStore } from "./lib";
-import { Card, Deck, allDecks, cardState, deckProgress, parseCheatSheet, plain } from "./deckdata";
+import { Card, Deck, allDecks, cardState, deckProgress, plain } from "./deckdata";
 import { Strip, Cell } from "./ui";
+import { DeckEditor } from "./DeckEditor";
 
 /** **굵게**, _기울임_ 만 살려서 보여 준다 */
 function Rich({ text }: { text: string }) {
@@ -40,11 +41,11 @@ export function CardsHome() {
         <DeckBlock key={d.id} deck={d} />
       ))}
       <section className="review-block" aria-labelledby="add-t">
-        <h2 id="add-t" className="section-title">컨닝페이퍼 추가</h2>
+        <h2 id="add-t" className="section-title">새 덱 만들기</h2>
         {!adding ? (
           <>
-            <p className="meta">'| 항목 | 내용 |' 표 형식의 컨닝페이퍼를 붙여 넣으면 새 덱이 돼요. '## 제목' 줄로 묶음을 나눌 수 있어요.</p>
-            <button type="button" className="btn ghost" onClick={() => setAdding(true)}>붙여 넣어 만들기</button>
+            <p className="meta">표에 항목과 내용을 바로 적거나, '| 항목 | 내용 |' 형식의 컨닝페이퍼를 붙여 넣어 만들어요.</p>
+            <button type="button" className="btn ghost" onClick={() => setAdding(true)}>새 덱 만들기</button>
           </>
         ) : (
           <DeckEditor onDone={() => setAdding(false)} />
@@ -61,10 +62,12 @@ function DeckBlock({ deck }: { deck: Deck }) {
   const [editing, setEditing] = useState(false);
   const weakN = p.learning + p.fresh;
   if (editing) {
-    const d = st.decks?.[deck.id];
     return (
-      <section className="review-block">
-        <DeckEditor initial={d ? { id: d.id, title: d.title, md: d.md } : undefined} onDone={() => setEditing(false)} />
+      <section className="review-block" aria-label={`${deck.title} 고치기`}>
+        <DeckEditor
+          initial={{ id: deck.id, title: deck.title, md: deck.md, builtIn: deck.builtIn, overridden: deck.overridden }}
+          onDone={() => setEditing(false)}
+        />
       </section>
     );
   }
@@ -101,10 +104,9 @@ function DeckBlock({ deck }: { deck: Deck }) {
           );
         })}
       </ul>
-      {!deck.builtIn ? (
-        <div className="row deck-tools">
-          <button type="button" className="link-btn" onClick={() => setEditing(true)}>고치기</button>
-          {!armDel ? (
+      <div className="row deck-tools">
+        <button type="button" className="link-btn" onClick={() => setEditing(true)}>고치기</button>
+        {deck.builtIn ? null : !armDel ? (
             <button type="button" className="link-btn danger" onClick={() => setArmDel(true)}>덱 지우기</button>
           ) : (
             <>
@@ -113,39 +115,8 @@ function DeckBlock({ deck }: { deck: Deck }) {
               <button type="button" className="btn ng" onClick={() => store.deleteDeck(deck.id)}>지우기</button>
             </>
           )}
-        </div>
-      ) : null}
+      </div>
     </section>
-  );
-}
-
-function DeckEditor({ initial, onDone }: { initial?: { id: string; title: string; md: string }; onDone: () => void }) {
-  const [title, setTitle] = useState(initial?.title || "");
-  const [md, setMd] = useState(initial?.md || "");
-  const parsed = useMemo(() => parseCheatSheet("preview", md, title || "컨닝페이퍼"), [md, title]);
-  const n = parsed.sections.reduce((x, s) => x + s.cards.length, 0);
-  function save() {
-    store.saveDeck({ id: initial?.id, title: title.trim() || parsed.title, md });
-    onDone();
-  }
-  return (
-    <div className="deck-editor">
-      <div className="field">
-        <label htmlFor="dk-title">덱 이름</label>
-        <input id="dk-title" value={title} placeholder={parsed.title} onChange={(e) => setTitle(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="dk-md">컨닝페이퍼 내용</label>
-        <textarea id="dk-md" rows={10} value={md} onChange={(e) => setMd(e.target.value)} placeholder={"## 순환\n| 항목 | 내용 |\n| --- | --- |\n| **QRS파** | 심실 탈분극 |"} />
-      </div>
-      <p className="meta" role="status">
-        {n ? `${parsed.sections.length}묶음, 카드 ${n}장으로 만들어져요.` : "표 줄(| 항목 | 내용 |)을 찾지 못했어요."}
-      </p>
-      <div className="row">
-        <button type="button" className="btn ghost" onClick={onDone}>취소</button>
-        <button type="button" className="btn primary" disabled={!n} onClick={save}>{initial ? "고친 내용 저장" : "덱 만들기"}</button>
-      </div>
-    </div>
   );
 }
 

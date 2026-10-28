@@ -380,3 +380,50 @@ p { margin: 0 0 0.6em; }
 .ng-cards li { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius-s); background: var(--eosin-soft); font-size: 0.92em; }
 @media (prefers-reduced-motion: reduce) { .flash-card { transition: none; } }
 @media (max-width: 420px) { .sec-row { grid-template-columns: minmax(0, 1fr) 48px 2.8em auto; gap: 8px; } .fc-front { font-size: 1.4rem; } }
+
+/* 덱 편집기(보이는 그대로 고치기) */
+.ed { gap: 14px; }
+.ed-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.review-block .ed-bar { background: color-mix(in srgb, var(--surface) 94%, transparent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 6px 14px; border-radius: 999px; font: inherit; font-size: 0.88rem; color: var(--ink-2); cursor: pointer; }
+.seg button.on { background: var(--hema); color: var(--hema-ink); font-weight: 600; }
+.ed-tool { width: 36px; height: 36px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; }
+.ed-tool:hover { border-color: var(--hema); }
+.ed-title, .ed-h2 { width: 100%; border: 0; border-bottom: 1.5px solid transparent; background: transparent; color: var(--ink); font-family: inherit; padding: 4px 0; border-radius: 0; }
+.ed-title { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
+.ed-h2 { font-size: 1.1rem; font-weight: 700; }
+.ed-title:focus, .ed-h2:focus { outline: none; border-bottom-color: var(--hema); }
+.ed-title::placeholder, .ed-h2::placeholder { color: var(--ink-3); font-weight: 600; }
+.ed-sec { display: grid; gap: 6px; padding-top: 6px; }
+.ed-sec-head { display: flex; align-items: center; gap: 6px; }
+.ed-sec-head::before { content: "##"; flex: none; white-space: nowrap; color: var(--ink-3); font-weight: 700; font-size: 0.85rem; opacity: 0.55; }
+.ed-sec-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+.icon-btn.sm { width: 30px; height: 30px; font-size: 0.85rem; }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.btn.sm { padding: 4px 10px; font-size: 0.82rem; }
+.ed-table { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.ed-row { display: grid; grid-template-columns: minmax(7em, 0.75fr) 1.5fr 32px; align-items: stretch; border-top: 1px solid var(--line); }
+.ed-row:first-child { border-top: 0; }
+.ed-headrow { background: color-mix(in srgb, var(--hema-soft) 60%, var(--surface)); font-size: 0.78rem; font-weight: 600; color: var(--ink-2); }
+.ed-headrow > span { padding: 6px 10px; }
+.ed-cell { padding: 9px 10px; min-height: 2.4em; line-height: 1.5; outline: none; word-break: keep-all; overflow-wrap: anywhere; cursor: text; }
+.ed-cell + .ed-cell { border-left: 1px solid var(--line); }
+.ed-cell:focus { background: color-mix(in srgb, var(--hema-soft) 45%, var(--surface)); box-shadow: inset 0 0 0 2px var(--hema); }
+.ed-cell:empty::before { content: attr(data-ph); color: var(--ink-3); pointer-events: none; }
+.ed-front { font-weight: 700; }
+.ed-back strong { color: var(--hema); }
+.ed-del { align-self: center; justify-self: center; opacity: 0.45; }
+.ed-row:hover .ed-del, .ed-row:focus-within .ed-del { opacity: 1; }
+.ed-add { justify-self: start; border: 0; background: none; color: var(--hema); font: inherit; font-size: 0.9rem; padding: 4px 2px; cursor: pointer; }
+.ed-help { margin: 0; }
+.ed-actions { align-items: center; }
+@media (max-width: 520px) {
+  /* 좁은 화면: 한 카드를 항목 위, 내용 아래로 쌓는다 */
+  .ed-headrow { display: none; }
+  .ed-row { grid-template-columns: 1fr 32px; grid-template-areas: "f d" "b b"; }
+  .ed-front { grid-area: f; padding-bottom: 2px; }
+  .ed-back { grid-area: b; padding-top: 2px; color: var(--ink); }
+  .ed-cell + .ed-cell { border-left: 0; }
+  .ed-del { grid-area: d; }
+}

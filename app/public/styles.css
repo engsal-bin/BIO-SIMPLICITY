@@ -397,7 +397,16 @@ p { margin: 0 0 0.6em; }
 .ed-title::placeholder, .ed-h2::placeholder { color: var(--ink-3); font-weight: 600; }
 .ed-sec { display: grid; gap: 6px; padding-top: 6px; }
 .ed-sec-head { display: flex; align-items: center; gap: 6px; }
-.ed-sec-head::before { content: "##"; flex: none; white-space: nowrap; color: var(--ink-3); font-weight: 700; font-size: 0.85rem; opacity: 0.55; }
+.ed-fold { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 6px; cursor: pointer; }
+.ed-fold:hover { background: var(--hema-soft); color: var(--hema); }
+.ed-fold svg { transition: transform 0.15s; transform: rotate(90deg); }
+.ed-sec.is-folded .ed-fold svg { transform: rotate(0deg); }
+.ed-folded { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left; border: 1px dashed var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 0.85rem; color: var(--ink-2); cursor: pointer; min-width: 0; }
+.ed-folded:hover { border-color: var(--hema); }
+.ed-folded-n { flex: none; font-weight: 600; color: var(--ink); }
+.ed-folded-peek { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ed-tool.wide { width: auto; padding: 0 10px; font-size: 0.82rem; }
+.ed-sec.is-folded { gap: 4px; }
 .ed-sec-tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .icon-btn.sm { width: 30px; height: 30px; font-size: 0.85rem; }
 .icon-btn:disabled { opacity: 0.35; cursor: default; }

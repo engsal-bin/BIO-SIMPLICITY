@@ -3,7 +3,7 @@
    - 굵게/기울임은 도구 막대나 Ctrl+B / Ctrl+I, 저장은 마크다운(| 항목 | 내용 |)으로
    - Enter: 항목 → 내용 → 다음 카드, 빈 줄에서 Backspace: 그 줄 지우기
    - 마크다운 표를 칸에 붙여 넣으면 여러 카드로 들어간다. '마크다운' 보기에서 원문도 고칠 수 있다 */
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { store } from "./lib";
 import { EditModel, EditRow, EditSection, fromEditModel, newKey, parseCheatSheet, toEditModel } from "./deckdata";
 
@@ -127,6 +127,34 @@ export function DeckEditor({ initial, onDone }: Props) {
   const [armSec, setArmSec] = useState<string | null>(null);
   const focusNext = useRef<{ cell: string } | null>(null);
 
+  /* 묶음 접기: 접은 묶음 이름을 덱마다 이 기기에 기억한다. 처음 여는 큰 덱(30장 넘고 묶음 2개 이상)은 모두 접힌 채로 */
+  const foldKey = `bioquiz:edfold:${initial?.id || "new"}`;
+  const [folded, setFolded] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(foldKey);
+      if (saved) {
+        const titles = new Set<string>(JSON.parse(saved));
+        return new Set(model.sections.filter((x) => titles.has(x.title)).map((x) => x.key));
+      }
+    } catch {}
+    const total = model.sections.reduce((x, y) => x + y.rows.length, 0);
+    return total > 30 && model.sections.length > 1 ? new Set(model.sections.map((x) => x.key)) : new Set();
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(foldKey, JSON.stringify(model.sections.filter((x) => folded.has(x.key)).map((x) => x.title)));
+    } catch {}
+  }, [folded]);
+  const isFolded = (k: string) => folded.has(k);
+  const setFold = (k: string, on: boolean) =>
+    setFolded((f) => {
+      if (f.has(k) === on) return f;
+      const n = new Set(f);
+      on ? n.add(k) : n.delete(k);
+      return n;
+    });
+  const allFolded = model.sections.length > 0 && model.sections.every((x) => folded.has(x.key));
+
   useLayoutEffect(() => {
     if (!focusNext.current) return;
     const el = document.querySelector(`[data-cell="${focusNext.current.cell}"]`) as HTMLElement | null;
@@ -146,6 +174,7 @@ export function DeckEditor({ initial, onDone }: Props) {
   const setRow = (sk: string, rk: string, p: Partial<EditRow>) => mapSec(sk, (s) => ({ ...s, rows: s.rows.map((r) => (r.key === rk ? { ...r, ...p } : r)) }));
   function addRow(sk: string, afterKey?: string, rows?: EditRow[]) {
     const fresh = rows || [{ key: newKey(), front: "", back: "" }];
+    setFold(sk, false);
     mapSec(sk, (s) => {
       const i = afterKey ? s.rows.findIndex((r) => r.key === afterKey) + 1 : s.rows.length;
       return { ...s, rows: [...s.rows.slice(0, i), ...fresh, ...s.rows.slice(i)] };
@@ -194,6 +223,9 @@ export function DeckEditor({ initial, onDone }: Props) {
     if (next === "markdown") setMd(fromEditModel(model));
     else {
       const m = toEditModel(md, model.title);
+      // 접어 둔 묶음은 이름으로 다시 찾는다
+      const titles = new Set(model.sections.filter((x) => folded.has(x.key)).map((x) => x.title));
+      setFolded(new Set(m.sections.filter((x) => titles.has(x.title)).map((x) => x.key)));
       setModel(m);
     }
     setMode(next);
@@ -221,6 +253,16 @@ export function DeckEditor({ initial, onDone }: Props) {
         <span className="spacer" />
         {mode === "visual" ? (
           <>
+            {model.sections.length > 1 ? (
+              <button
+                type="button"
+                className="ed-tool wide"
+                onClick={() => setFolded(allFolded ? new Set() : new Set(model.sections.map((x) => x.key)))}
+                aria-label={allFolded ? "모든 묶음 펼치기" : "모든 묶음 접기"}
+              >
+                {allFolded ? "모두 펼치기" : "모두 접기"}
+              </button>
+            ) : null}
             <button type="button" className="ed-tool" onMouseDown={fmt("bold")} aria-label="굵게 (Ctrl+B)" title="굵게 (Ctrl+B)"><b>B</b></button>
             <button type="button" className="ed-tool" onMouseDown={fmt("italic")} aria-label="기울임 (Ctrl+I)" title="기울임 (Ctrl+I)"><i>I</i></button>
           </>
@@ -237,8 +279,18 @@ export function DeckEditor({ initial, onDone }: Props) {
             onChange={(e) => update((m) => ({ ...m, title: e.target.value }))}
           />
           {model.sections.map((s, si) => (
-            <section key={s.key} className="ed-sec">
+            <section key={s.key} className={`ed-sec ${isFolded(s.key) ? "is-folded" : ""}`}>
               <div className="ed-sec-head">
+                <button
+                  type="button"
+                  className="ed-fold"
+                  aria-expanded={!isFolded(s.key)}
+                  aria-controls={`edt-${s.key}`}
+                  aria-label={`${s.title || "묶음"} ${isFolded(s.key) ? "펼치기" : "접기"}`}
+                  onClick={() => setFold(s.key, !isFolded(s.key))}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
                 <input
                   className="ed-h2"
                   data-cell={`${s.key}-h`}
@@ -249,6 +301,7 @@ export function DeckEditor({ initial, onDone }: Props) {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
+                      setFold(s.key, false);
                       const first = s.rows[0];
                       if (first) focusNext.current = { cell: `${first.key}-f` }, setModel((m) => ({ ...m }));
                       else addRow(s.key);
@@ -267,7 +320,14 @@ export function DeckEditor({ initial, onDone }: Props) {
                   )}
                 </span>
               </div>
-              <div className="ed-table" role="table" aria-label={`${s.title || "묶음"} 카드`}>
+              {isFolded(s.key) ? (
+                <button type="button" className="ed-folded" onClick={() => setFold(s.key, false)}>
+                  <span className="ed-folded-n">카드 {s.rows.filter((r) => r.front || r.back).length}장</span>
+                  <span className="ed-folded-peek">{s.rows.map((r) => r.front).filter(Boolean).slice(0, 4).join(" · ")}{s.rows.length > 4 ? " …" : ""}</span>
+                </button>
+              ) : (
+              <>
+              <div className="ed-table" id={`edt-${s.key}`} role="table" aria-label={`${s.title || "묶음"} 카드`}>
                 <div className="ed-row ed-headrow" role="row">
                   <span role="columnheader">항목</span>
                   <span role="columnheader">내용</span>
@@ -308,6 +368,8 @@ export function DeckEditor({ initial, onDone }: Props) {
                 ))}
               </div>
               <button type="button" className="ed-add" onClick={() => addRow(s.key)}>+ 카드</button>
+              </>
+              )}
             </section>
           ))}
           <button type="button" className="btn ghost" onClick={addSection}>+ 묶음 추가</button>

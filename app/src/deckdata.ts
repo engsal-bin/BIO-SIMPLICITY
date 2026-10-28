@@ -169,3 +169,77 @@ export function deckProgress(st: State, cards: Card[]) {
   }
   return { known, learning, fresh: cards.length - known - learning, total: cards.length };
 }
+
+/* ───────── 덱 정리: 마지막 공부, 오늘 다시 볼 카드, 찾기 ───────── */
+
+export const deckIdOf = (cardId: string) => cardId.slice(0, cardId.indexOf(":"));
+
+let lastMemo: { cards: State["cards"]; out: Record<string, number> } | null = null;
+/** 덱 id → 그 덱 카드를 마지막으로 넘긴 시각 */
+export function lastStudiedMap(st: State): Record<string, number> {
+  if (lastMemo && lastMemo.cards === st.cards) return lastMemo.out;
+  const out: Record<string, number> = {};
+  for (const [id, c] of Object.entries(st.cards || {})) {
+    const d = deckIdOf(id);
+    if (!out[d] || c.t > out[d]) out[d] = c.t;
+  }
+  lastMemo = { cards: st.cards, out };
+  return out;
+}
+
+const DAY = 86400000;
+/** 알아요를 이어서 받을수록 다시 볼 간격을 늘린다(1·2·4·8·16·30일). 몰라요면 바로 다시 */
+export function reviewInterval(ok: number, ng: number): number {
+  const streakish = Math.max(1, ok - ng);
+  return [1, 2, 4, 8, 16, 30][Math.min(streakish - 1, 5)] * DAY;
+}
+
+export type DueCard = Card & { deckId: string; overdue: number };
+
+/** 오늘 다시 볼 카드: 몰라요였던 카드 + 알아요였지만 간격이 지난 카드(보관한 덱은 간격의 2배가 지나야) */
+export function dueCards(st: State, now = Date.now(), max = 60): DueCard[] {
+  const metas = st.deckMeta || {};
+  const out: DueCard[] = [];
+  for (const d of allDecks(st)) {
+    const archived = !!metas[d.id]?.archived;
+    for (const c of d.cards) {
+      const s = st.cards?.[c.id];
+      if (!s) continue;
+      if (!s.last) {
+        if (!archived) out.push({ ...c, deckId: d.id, overdue: Number.MAX_SAFE_INTEGER - (now - s.t) });
+        continue;
+      }
+      const wait = reviewInterval(s.ok, s.ng) * (archived ? 2 : 1);
+      if (now - s.t >= wait) out.push({ ...c, deckId: d.id, overdue: now - s.t - wait });
+    }
+  }
+  return out.sort((a, b) => b.overdue - a.overdue).slice(0, max);
+}
+
+export function folderList(st: State) {
+  return Object.values(st.folders || {})
+    .filter((f) => !f.deleted)
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
+export type CardHit = { deck: Deck; card: Card };
+export function searchCards(st: State, q: string, max = 40): { decks: Deck[]; cards: CardHit[] } {
+  const needle = q.trim().toLowerCase().replace(/\s+/g, "");
+  if (!needle) return { decks: [], cards: [] };
+  const norm = (s: string) => plain(s).toLowerCase().replace(/\s+/g, "");
+  const decks: Deck[] = [];
+  const cards: CardHit[] = [];
+  for (const d of allDecks(st)) {
+    if (norm(d.title).includes(needle)) decks.push(d);
+    for (const c of d.cards) if (cards.length < max && (norm(c.front).includes(needle) || norm(c.back).includes(needle))) cards.push({ deck: d, card: c });
+  }
+  return { decks, cards };
+}
+
+export function relDay(t: number | undefined, now = Date.now()): string {
+  if (!t) return "안 봄";
+  const a = new Date(now);
+  a.setHours(0, 0, 0, 0);
+  const days = Math.round((a.getTime() - new Date(t).setHours(0, 0, 0, 0)) / DAY);
+  return days <= 0 ? "오늘" : days === 1 ? "어제" : days < 30 ? `${days}일 전` : `${Math.round(days / 30)}달 전`;
+}

@@ -7,7 +7,7 @@ import {
 import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
 import { ExamRunner, FlashRunner, PracticeRunner, RunSpec } from "./Runner";
-import { CardPlay, CardsHome } from "./Cards";
+import { CardPlay, CardsHome, DeckEditPage, DeckPage } from "./Cards";
 
 /* ───────── 공통 ───────── */
 
@@ -964,7 +964,13 @@ export function App() {
   else if (p0 === "result") view = <Result db={db} id={rest[0]} />;
   else if (p0 === "review") view = <Review db={db} />;
   else if (p0 === "stats") view = <Stats db={db} reboot={reboot} source={boot.source} />;
-  else if (p0 === "cards") view = rest[0] === "play" ? <CardPlay query={route.query} /> : <CardsHome />;
+  else if (p0 === "cards") {
+    if (rest[0] === "play") view = <CardPlay query={route.query} />;
+    else if (rest[0] === "deck" && rest[1]) view = <DeckPage key={rest[1]} id={rest[1]} />;
+    else if (rest[0] === "edit" && rest[1]) view = <DeckEditPage key={rest[1]} id={rest[1]} query={route.query} />;
+    else if (rest[0] === "new") view = <DeckEditPage key="new" query={route.query} />;
+    else view = <CardsHome />;
+  }
   else view = <NotFound />;
 
   const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0;

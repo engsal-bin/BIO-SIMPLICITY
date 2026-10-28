@@ -271,7 +271,13 @@ export type State = {
   decks?: Record<string, UserDeck>;
   /** 카드별 기억 상태 */
   cards?: Record<string, CardStat>;
+  /** 덱 정리: 폴더·고정·보관 (기본 덱 포함) */
+  deckMeta?: Record<string, DeckMeta>;
+  folders?: Record<string, Folder>;
 };
+
+export type DeckMeta = { folder?: string; pinned?: boolean; archived?: boolean; u: number };
+export type Folder = { id: string; name: string; createdAt: number; u: number; deleted?: boolean };
 
 export type UserDeck = { id: string; title: string; md: string; createdAt: number; u: number; deleted?: boolean };
 /** ok/ng = 알아요/몰라요 누른 횟수, last = 마지막 판정, t = 마지막 시각 */
@@ -313,11 +319,16 @@ export function mergeState(a: SyncedState, b: SyncedState): SyncedState {
     bookmarks: bm,
     resetAt: resetAt || undefined,
     decks: pickNewest(a.decks, b.decks, (d) => d.u),
+    deckMeta: pickNewest(a.deckMeta, b.deckMeta, (d) => d.u),
+    folders: pickNewest(a.folders, b.folders, (d) => d.u),
     cards: Object.fromEntries(Object.entries(pickNewest(a.cards, b.cards, (c) => c.t)).filter(([, c]) => c.t >= resetAt)),
   };
 }
 
-export const syncedPart = (s: State): SyncedState => ({ attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks, resetAt: s.resetAt, decks: s.decks, cards: s.cards });
+export const syncedPart = (s: State): SyncedState => ({
+  attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks, resetAt: s.resetAt,
+  decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders,
+});
 
 export const bookmarkedIds = (s: State) => Object.keys(s.bookmarks).filter((k) => s.bookmarks[k] > 0);
 
@@ -434,11 +445,11 @@ export const store = {
     const parsed = JSON.parse(text);
     const s = parsed.state ?? parsed;
     if (!Array.isArray(s.attempts) || !Array.isArray(s.sessions)) throw new Error("학습 기록 파일 형식이 아닙니다.");
-    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt, decks: s.decks, cards: s.cards }) });
+    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt, decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders }) });
   },
   reset() {
     // 붙여 넣은 컨닝페이퍼는 기록이 아니므로 남긴다
-    commit({ ...empty(), settings: state.settings, resetAt: Date.now(), decks: state.decks });
+    commit({ ...empty(), settings: state.settings, resetAt: Date.now(), decks: state.decks, deckMeta: state.deckMeta, folders: state.folders });
   },
   /* 카드 */
   markCard(id: string, ok: boolean) {
@@ -453,6 +464,26 @@ export const store = {
     const deck: UserDeck = { id, title: d.title, md: d.md, createdAt: old?.createdAt || now, u: now };
     commit({ ...state, decks: { ...(state.decks || {}), [id]: deck } });
     return id;
+  },
+  setDeckMeta(id: string, patch: Partial<Omit<DeckMeta, "u">>) {
+    const old = state.deckMeta?.[id] || { u: 0 };
+    commit({ ...state, deckMeta: { ...(state.deckMeta || {}), [id]: { ...old, ...patch, u: Date.now() } } });
+  },
+  saveFolder(name: string, id?: string): string {
+    const fid = id || "f-" + uid();
+    const old = state.folders?.[fid];
+    const now = Date.now();
+    commit({ ...state, folders: { ...(state.folders || {}), [fid]: { id: fid, name, createdAt: old?.createdAt || now, u: now } } });
+    return fid;
+  },
+  /** 폴더를 지우면 안의 덱은 '폴더 없음'으로 */
+  deleteFolder(id: string) {
+    const old = state.folders?.[id];
+    if (!old) return;
+    const now = Date.now();
+    const metas = { ...(state.deckMeta || {}) };
+    for (const [k, m] of Object.entries(metas)) if (m.folder === id) metas[k] = { ...m, folder: undefined, u: now };
+    commit({ ...state, deckMeta: metas, folders: { ...(state.folders || {}), [id]: { ...old, deleted: true, u: now } } });
   },
   deleteDeck(id: string) {
     const old = state.decks?.[id];

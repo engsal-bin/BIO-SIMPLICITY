@@ -111,7 +111,7 @@ function RichCell({ id, value, label, placeholder, className = "", onChange, onE
 
 /* ───────── 편집기 ───────── */
 
-type Props = { initial?: { id: string; title: string; md: string; builtIn?: boolean; overridden?: boolean }; onDone: () => void };
+type Props = { initial?: { id: string; title: string; md: string; builtIn?: boolean; overridden?: boolean }; onDone: (savedId?: string) => void };
 
 export function DeckEditor({ initial, onDone }: Props) {
   const [mode, setMode] = useState<"visual" | "markdown">("visual");
@@ -234,8 +234,8 @@ export function DeckEditor({ initial, onDone }: Props) {
   function save() {
     const text = currentMd;
     const title = (mode === "visual" ? model.title : toEditModel(text, model.title).title).trim() || parsed.title;
-    store.saveDeck({ id: initial?.id, title, md: text });
-    onDone();
+    const id = store.saveDeck({ id: initial?.id, title, md: text });
+    onDone(id);
   }
 
   const fmt = (cmd: "bold" | "italic") => (e: React.MouseEvent) => {
@@ -401,7 +401,7 @@ export function DeckEditor({ initial, onDone }: Props) {
           <>
             <span className="meta">고친 내용을 버릴까요?</span>
             <button type="button" className="btn ghost" onClick={() => setArmCancel(false)}>계속 고치기</button>
-            <button type="button" className="btn ng" onClick={onDone}>버리기</button>
+            <button type="button" className="btn ng" onClick={() => onDone()}>버리기</button>
           </>
         ) : (
           <>
@@ -416,7 +416,7 @@ export function DeckEditor({ initial, onDone }: Props) {
             <>
               <span className="meta">처음 받은 내용으로 되돌릴까요?</span>
               <button type="button" className="btn ghost" onClick={() => setArmRevert(false)}>취소</button>
-              <button type="button" className="btn ng" onClick={() => { store.deleteDeck(initial.id); onDone(); }}>되돌리기</button>
+              <button type="button" className="btn ng" onClick={() => { store.deleteDeck(initial.id); onDone(initial.id); }}>되돌리기</button>
             </>
           ) : (
             <button type="button" className="link-btn" onClick={() => setArmRevert(true)}>원래 내용으로 되돌리기</button>

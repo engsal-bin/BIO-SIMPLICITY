@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { CIRCLED, Question, Resp, answerText, blankAccepted, blankMatch, store, useStore } from "./lib";
+import React, { useEffect, useRef, useState } from "react";
+import { CIRCLED, Question, Resp, WRONG_TYPES, answerText, blankAccepted, blankMatch, store, useStore, wrongTypeLabel } from "./lib";
 
 /** 회차 진행 띠: 칸마다 정답(보라)·오답(분홍)·미채점·현재 */
 export type Cell = true | false | null | "answered" | "empty";
@@ -19,15 +19,81 @@ export function Strip({ cells, current, onPick, size = "m", label }: { cells: Ce
   );
 }
 
+/** '찍음' 표시(예전 북마크). 확신 없이 고른 문항을 모아 두고 결과 화면에서 펼쳐 보여 준다 */
 export function BookmarkButton({ qid }: { qid: string }) {
   const st = useStore();
   const on = st.bookmarks[qid] > 0;
   return (
-    <button type="button" className={`icon-btn ${on ? "on" : ""}`} aria-pressed={on} aria-label={on ? "북마크 해제" : "북마크"} onClick={() => store.toggleBookmark(qid)}>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-        <path d="M6 3.5h12v17l-6-4.2-6 4.2z" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      </svg>
+    <button type="button" className={`guess-btn ${on ? "on" : ""}`} aria-pressed={on} title="확신 없이 골랐으면 표시해 두세요" onClick={() => store.toggleBookmark(qid)}>
+      {on ? "찍음 ✓" : "찍음"}
     </button>
+  );
+}
+
+/** 정답을 확인한 뒤: 틀렸으면 오답 유형을, 맞았으면 '찍음' 여부를 고르고 메모를 남긴다 */
+export function WrongNotePanel({ q, wrong }: { q: Question; wrong: boolean }) {
+  const st = useStore();
+  const note = st.notes?.[q.id];
+  const guessed = st.bookmarks[q.id] > 0;
+  const [memo, setMemo] = useState(note?.memo || "");
+  const [memoOpen, setMemoOpen] = useState(!!note?.memo || wrong);
+  const saved = useRef(note?.memo || "");
+  // 다른 기기에서 고친 메모가 들어오면 반영(입력 중이 아닐 때)
+  useEffect(() => {
+    if (note && note.memo !== saved.current && document.activeElement?.id !== `memo-${q.id}`) {
+      saved.current = note.memo;
+      setMemo(note.memo);
+    }
+  }, [note?.memo]);
+  useEffect(() => {
+    if (memo === saved.current) return;
+    const t = setTimeout(() => {
+      saved.current = memo;
+      store.setMemo(q.id, memo);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [memo]);
+  const flush = () => {
+    if (memo !== saved.current) {
+      saved.current = memo;
+      store.setMemo(q.id, memo);
+    }
+  };
+  const cur = WRONG_TYPES.find((t) => t.id === note?.type);
+  const history = (note?.log || []).map((x) => wrongTypeLabel(x.type));
+  return (
+    <section className="wnote" aria-label="오답 노트">
+      {wrong ? (
+        <>
+          <h3 className="wnote-title">왜 틀렸나요?</h3>
+          <div className="chips" role="group" aria-label="오답 유형">
+            {WRONG_TYPES.map((t) => (
+              <button key={t.id} type="button" className={`chip-btn ${note?.type === t.id ? "on" : ""} ${t.id === "flawed" ? "quiet" : ""}`}
+                aria-pressed={note?.type === t.id} title={t.hint} onClick={() => store.setWrongType(q.id, note?.type === t.id ? undefined : t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <p className="meta wnote-hint">{cur ? cur.hint : "가장 큰 이유 하나를 고르세요. 다시 누르면 해제돼요."}</p>
+          {history.length > 1 ? <p className="meta">지난 유형: {history.join(" → ")}</p> : null}
+        </>
+      ) : (
+        <div className="wnote-row">
+          <span className="wnote-title">확신 없이 맞혔나요?</span>
+          <BookmarkButton qid={q.id} />
+          {guessed && note?.type ? <span className="meta">유형: {wrongTypeLabel(note.type)}</span> : null}
+        </div>
+      )}
+      {memoOpen ? (
+        <label className="free wnote-memo">
+          <span className="sr-only">메모</span>
+          <textarea id={`memo-${q.id}`} rows={2} value={memo} onChange={(e) => setMemo(e.target.value)} onBlur={flush}
+            placeholder={wrong ? "메모 (예: '틀린 것'을 묻는데 맞는 것을 골랐다)" : "메모"} />
+        </label>
+      ) : (
+        <button type="button" className="link-btn" onClick={() => setMemoOpen(true)}>메모 남기기</button>
+      )}
+    </section>
   );
 }
 

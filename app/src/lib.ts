@@ -258,6 +258,19 @@ export type Session = {
   /** 마지막으로 고친 시각(스스로 채점 등). 동기화 때 더 최근 것을 남긴다 */
   u?: number;
 };
+/* 오답 유형: 틀린 이유를 고르면 오답노트에서 유형별로 모아 볼 수 있다 */
+export type WrongType = "unknown" | "misconcept" | "data" | "slip" | "flawed";
+export const WRONG_TYPES: { id: WrongType; label: string; hint: string }[] = [
+  { id: "unknown", label: "모름", hint: "처음 보거나 기억이 안 나서 찍었다" },
+  { id: "misconcept", label: "잘못 앎·혼동", hint: "확신했는데 틀렸거나, 비슷한 개념끼리 헷갈렸다" },
+  { id: "data", label: "자료 해석", hint: "그래프·그림·가계도·실험을 잘못 읽었거나 계산을 틀렸다" },
+  { id: "slip", label: "실수", hint: "발문(틀린/아닌/모두)을 잘못 읽었거나 보기 조합·마킹을 잘못 골랐다" },
+  { id: "flawed", label: "문제 오류", hint: "정답이 애매하거나 틀린 문제 — 오답노트·약점 통계에서 뺀다" },
+];
+export const wrongTypeLabel = (t?: WrongType) => WRONG_TYPES.find((x) => x.id === t)?.label || "";
+/** 문항별 오답 메모. type = 지금 오답 유형(없으면 미분류), log = 유형을 고른 기록, u = 마지막으로 고친 시각 */
+export type QNote = { type?: WrongType; memo: string; u: number; log?: { type: WrongType; t: number }[] };
+
 export type Settings = { theme: "system" | "light" | "dark"; font: "m" | "l" };
 export type State = {
   attempts: Attempt[];
@@ -274,6 +287,8 @@ export type State = {
   /** 덱 정리: 폴더·고정·보관 (기본 덱 포함) */
   deckMeta?: Record<string, DeckMeta>;
   folders?: Record<string, Folder>;
+  /** 문항 id → 오답 유형·메모 */
+  notes?: Record<string, QNote>;
 };
 
 export type DeckMeta = { folder?: string; pinned?: boolean; archived?: boolean; u: number };
@@ -322,12 +337,13 @@ export function mergeState(a: SyncedState, b: SyncedState): SyncedState {
     deckMeta: pickNewest(a.deckMeta, b.deckMeta, (d) => d.u),
     folders: pickNewest(a.folders, b.folders, (d) => d.u),
     cards: Object.fromEntries(Object.entries(pickNewest(a.cards, b.cards, (c) => c.t)).filter(([, c]) => c.t >= resetAt)),
+    notes: Object.fromEntries(Object.entries(pickNewest(a.notes, b.notes, (n) => n.u)).filter(([, n]) => n.u >= resetAt)),
   };
 }
 
 export const syncedPart = (s: State): SyncedState => ({
   attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks, resetAt: s.resetAt,
-  decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders,
+  decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders, notes: s.notes,
 });
 
 export const bookmarkedIds = (s: State) => Object.keys(s.bookmarks).filter((k) => s.bookmarks[k] > 0);
@@ -427,6 +443,20 @@ export const store = {
     b[qid] = b[qid] > 0 ? -Date.now() : Date.now();
     commit({ ...state, bookmarks: b });
   },
+  /** 오답 유형을 고른다(같은 유형을 다시 누르면 해제) */
+  setWrongType(qid: string, type: WrongType | undefined) {
+    const now = Date.now();
+    const old = state.notes?.[qid] || { memo: "", u: 0 };
+    const log = type && type !== old.type ? [...(old.log || []), { type, t: now }].slice(-10) : old.log;
+    const next: QNote = { ...old, type, log, u: now };
+    if (!type) delete next.type;
+    commit({ ...state, notes: { ...(state.notes || {}), [qid]: next } });
+  },
+  setMemo(qid: string, memo: string) {
+    const old = state.notes?.[qid] || { memo: "", u: 0 };
+    if (old.memo === memo) return;
+    commit({ ...state, notes: { ...(state.notes || {}), [qid]: { ...old, memo, u: Date.now() } } });
+  },
   setSettings(p: Partial<Settings>) {
     commit({ ...state, settings: { ...state.settings, ...p } }, false);
   },
@@ -445,7 +475,7 @@ export const store = {
     const parsed = JSON.parse(text);
     const s = parsed.state ?? parsed;
     if (!Array.isArray(s.attempts) || !Array.isArray(s.sessions)) throw new Error("학습 기록 파일 형식이 아닙니다.");
-    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt, decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders }) });
+    commit({ ...state, ...mergeState(syncedPart(state), { attempts: s.attempts, sessions: s.sessions, bookmarks: s.bookmarks || {}, resetAt: s.resetAt, decks: s.decks, cards: s.cards, deckMeta: s.deckMeta, folders: s.folders, notes: s.notes }) });
   },
   reset() {
     // 붙여 넣은 컨닝페이퍼는 기록이 아니므로 남긴다
@@ -543,7 +573,7 @@ export function topicStats(db: DB): { list: TopicStat[]; overall: number | null 
   const first: Record<string, number> = {};
   const last: Record<string, number> = {};
   for (const a of [...state.attempts].sort((x, y) => x.t - y.t)) {
-    if (!db.q[a.q]) continue;
+    if (!db.q[a.q] || state.notes?.[a.q]?.type === "flawed") continue;
     if (!(a.q in first)) first[a.q] = attemptScore(a);
     last[a.q] = attemptScore(a);
   }
@@ -574,9 +604,27 @@ export function weakTopics(db: DB, max = 3): string[] {
 
 /** 오답노트: 한 번이라도 틀렸고, 그 뒤로 2번 연속 맞히지 못한 문항 */
 export const GRADUATE_STREAK = 2;
-export function wrongNoteIds(db: DB): string[] {
+export function wrongNoteIds(db: DB, type?: WrongType | "none"): string[] {
   const st = qStats();
-  return Object.keys(st).filter((id) => st[id].everWrong && st[id].streak < GRADUATE_STREAK && db.q[id] && !db.q[id].hidden);
+  const notes = state.notes || {};
+  return Object.keys(st).filter((id) => {
+    if (!(st[id].everWrong && st[id].streak < GRADUATE_STREAK && db.q[id] && !db.q[id].hidden)) return false;
+    const t = notes[id]?.type;
+    if (t === "flawed") return false; // 문제 오류로 고른 문항은 오답노트에서 뺀다
+    return !type || (type === "none" ? !t : t === type);
+  });
+}
+
+/** 오답노트 문항 수를 유형별로(미분류 = none) */
+export function wrongTypeCounts(db: DB): Record<WrongType | "none", number> {
+  const out = { unknown: 0, misconcept: 0, data: 0, slip: 0, flawed: 0, none: 0 } as Record<WrongType | "none", number>;
+  const st = qStats();
+  const notes = state.notes || {};
+  for (const id of Object.keys(st)) {
+    if (!(st[id].everWrong && st[id].streak < GRADUATE_STREAK && db.q[id] && !db.q[id].hidden)) continue;
+    out[notes[id]?.type || "none"]++;
+  }
+  return out;
 }
 
 export function lastRoundSession(roundId: string): Session | undefined {

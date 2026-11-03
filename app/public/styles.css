@@ -484,3 +484,25 @@ p { margin: 0 0 0.6em; }
 .move-box { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); display: grid; gap: 10px; }
 .deck-page .deck-bar { margin: 10px 0 4px; }
 @media (max-width: 420px) { .deck-row { grid-template-columns: minmax(0, 1fr) 52px 14px; gap: 8px; } }
+
+/* ── 오답 노트(유형·메모)와 찍음 ── */
+.guess-btn { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.guess-btn.on { background: color-mix(in srgb, var(--pend) 24%, transparent); border-color: var(--pend); color: var(--ink); }
+.wnote { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); }
+.wnote-title { font-size: 0.92rem; font-weight: 700; margin: 0 0 8px; }
+.wnote-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wnote-row .wnote-title { margin: 0; }
+.wnote-hint { margin: 8px 0 0; }
+.wnote-memo { margin-top: 10px; }
+.wnote-memo textarea { font-size: 0.92rem; resize: vertical; }
+.wnote .link-btn { margin-top: 6px; }
+.chip-btn.quiet { color: var(--ink-2); border-style: dashed; }
+.chip-btn.quiet.on { background: var(--ink-2); border-color: var(--ink-2); border-style: solid; color: var(--surface); }
+.wtype { font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--hema-soft); color: var(--hema); white-space: nowrap; }
+.wtype.none { background: transparent; border: 1px dashed var(--line); color: var(--ink-3); }
+.note-list { list-style: none; padding: 0; margin: 0; }
+.res-stem .wtype { margin-left: 6px; vertical-align: 1px; }
+.wtype.guess { background: color-mix(in srgb, var(--pend) 24%, transparent); color: var(--ink); }
+.note-memo { display: block; color: var(--ink-2); font-size: 0.88em; margin-top: 2px; }
+.wt-chips { margin: 10px 0 12px; }
+.chip-btn:disabled { opacity: 0.45; cursor: default; }

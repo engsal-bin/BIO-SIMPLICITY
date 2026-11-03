@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { DB, Resp, Session, go, gradeDetail, store, uid } from "./lib";
-import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
+import { Cell, Explanation, QuestionView, SelfGrade, Strip, WrongNotePanel, fmtTime } from "./ui";
 
 export type RunSpec = {
   kind: "round" | "practice" | "flash";
@@ -194,6 +194,7 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
           ) : null}
           <Explanation q={q} />
           {needsSelf ? <SelfGrade onGrade={setResult} /> : null}
+          {graded ? <WrongNotePanel key={q.id} q={q} wrong={!result} /> : null}
         </>
       ) : null}
 

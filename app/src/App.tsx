@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DB, Question, Round, answerText, bestScore, go, lastRoundSession, qStats, shuffle, store,
   streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, bookmarkedIds, buildDB, loadLocalRaw,
-  TOPIC_NAMES, topicShort, topicStats, weakTopics, gradeDetail,
+  TOPIC_NAMES, topicShort, topicStats, weakTopics, gradeDetail, WRONG_TYPES, WrongType, wrongTypeCounts, wrongTypeLabel,
 } from "./lib";
 import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
-import { Cell, Explanation, QuestionView, SelfGrade, Strip, fmtTime } from "./ui";
+import { Cell, Explanation, QuestionView, SelfGrade, Strip, WrongNotePanel, fmtTime } from "./ui";
 import { ExamRunner, FlashRunner, PracticeRunner, RunSpec } from "./Runner";
 import { CardPlay, CardsHome, DeckEditPage, DeckPage } from "./Cards";
 
@@ -100,7 +100,7 @@ function Home({ db }: { db: DB }) {
         </button>
         <button type="button" className="quick-item" disabled={!bm.length} onClick={() => go("/play/bookmarks?mode=flash")}>
           <span className="qi-num">{bm.length}</span>
-          <span className="qi-label">북마크 카드로 넘기기</span>
+          <span className="qi-label">찍은 문제 카드로 넘기기</span>
         </button>
         <button type="button" className="quick-item" onClick={() => go("/play/random?n=15&mode=practice")}>
           <span className="qi-num">15</span>
@@ -262,9 +262,13 @@ function Play({ db, path, query }: { db: DB; path: string[]; query: URLSearchPar
         timeLimit: r.time_limit_sec,
       };
     }
-    if (what === "wrong") return { kind: mode === "flash" ? "flash" : "practice", title: "오답노트", qids: shuffle(wrongNoteIds(db)), back: "/review" };
+    if (what === "wrong") {
+      const wt = (query.get("wt") || "") as WrongType | "none" | "";
+      const label = wt === "none" ? "유형 미선택" : wrongTypeLabel((wt || undefined) as WrongType | undefined);
+      return { kind: mode === "flash" ? "flash" : "practice", title: label ? `오답노트 · ${label}` : "오답노트", qids: shuffle(wrongNoteIds(db, wt || undefined)), back: "/review" };
+    }
     if (what === "bookmarks")
-      return { kind: mode === "flash" ? "flash" : "practice", title: "북마크", qids: shuffle(bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden)), back: "/review" };
+      return { kind: mode === "flash" ? "flash" : "practice", title: "찍은 문제", qids: shuffle(bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden)), back: "/review" };
     if (what === "random") {
       const books = (query.get("book") || "").split(",").filter(Boolean);
       const types = (query.get("type") || "").split(",").filter(Boolean);
@@ -315,7 +319,8 @@ function respText(q: Question, r: Resp) {
 function Result({ db, id }: { db: DB; id: string }) {
   const st = useStore();
   const s = st.sessions.find((x) => x.id === id);
-  const [open, setOpen] = useState<string | null>(null);
+  // 틀린 문항·찍은 문항·채점할 문항은 펼친 채로 시작하고, 누르면 접고 펼친다
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   if (!s) return <NotFound />;
   const qs = s.qids.map((q) => db.q[q]).filter(Boolean);
   const ok = qs.filter((q) => s.results[q.id] === true).length;
@@ -346,14 +351,21 @@ function Result({ db, id }: { db: DB; id: string }) {
       <ol className="result-list">
         {qs.map((q, i) => {
           const r = s.results[q.id];
-          const isOpen = open === q.id || r === null;
+          const guessed = st.bookmarks[q.id] > 0;
+          const note = st.notes?.[q.id];
+          const byDefault = r !== true || guessed;
+          const isOpen = r === null || (toggled[q.id] ?? byDefault);
           const part = q.type === "blank" && r === false ? gradeDetail(q, s.resps[q.id]) : null;
           const partLabel = part?.hits && part.hits.some(Boolean) ? `${part.hits.filter(Boolean).length}/${part.hits.length}칸` : "";
           return (
             <li key={q.id} className={`res ${r === true ? "ok" : r === false ? "ng" : "pend"}`}>
-              <button type="button" className="res-head" aria-expanded={isOpen} onClick={() => setOpen(isOpen && r !== null ? null : q.id)}>
+              <button type="button" className="res-head" aria-expanded={isOpen} onClick={() => r !== null && setToggled({ ...toggled, [q.id]: !isOpen })}>
                 <span className="res-num">{i + 1}</span>
-                <span className="res-stem">{q.stem}</span>
+                <span className="res-stem">
+                  {q.stem || `${db.book[q.book_id]?.title || ""} ${q.source || ""}`}
+                  {r === false ? <span className={`wtype ${note?.type ? "" : "none"}`}>{note?.type ? wrongTypeLabel(note.type) : "유형 미선택"}</span> : null}
+                  {guessed ? <span className="wtype guess">찍음</span> : null}
+                </span>
                 <span className="res-mark">{r === true ? "정답" : r === false ? partLabel || "오답" : "채점 필요"}</span>
               </button>
               {isOpen ? (
@@ -362,6 +374,67 @@ function Result({ db, id }: { db: DB; id: string }) {
                   {q.type !== "mcq" && s.kind !== "flash" ? <p className="meta">내 답: {respText(q, s.resps[q.id])}</p> : null}
                   <Explanation q={q} />
                   {r === null ? <SelfGrade onGrade={(v) => selfGrade(q.id, v)} /> : null}
+                  {r !== null && s.kind !== "flash" ? <WrongNotePanel q={q} wrong={r === false} /> : null}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </main>
+  );
+}
+
+/* ───────── 오답 메모 모아 보기 ───────── */
+
+function NotesPage({ db, query }: { db: DB; query: URLSearchParams }) {
+  const st = useStore();
+  const [wt, setWt] = useState<WrongType | "none" | "">((query.get("wt") as any) || "");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const notes = st.notes || {};
+  const inNote = new Set(wrongNoteIds(db));
+  // 오답노트에 있거나 메모·유형을 남긴 문항(문제 오류 포함), 최근에 고친 것부터
+  const ids = [...new Set([...inNote, ...Object.keys(notes).filter((id) => notes[id].type || notes[id].memo)])]
+    .filter((id) => db.q[id] && !db.q[id].hidden)
+    .filter((id) => !wt || (wt === "none" ? !notes[id]?.type : notes[id]?.type === wt))
+    .sort((a, b) => (notes[b]?.u || 0) - (notes[a]?.u || 0));
+  const all = [...new Set([...inNote, ...Object.keys(notes).filter((id) => notes[id].type || notes[id].memo)])].filter((id) => db.q[id] && !db.q[id].hidden);
+  const count = (t: WrongType | "none") => all.filter((id) => (t === "none" ? !notes[id]?.type : notes[id]?.type === t)).length;
+  return (
+    <main className="page">
+      <a className="back" href="#/review">복습</a>
+      <h1 className="page-title">오답 메모</h1>
+      <div className="chips wt-chips" role="group" aria-label="오답 유형">
+        <button type="button" className={`chip-btn ${!wt ? "on" : ""}`} onClick={() => setWt("")}>전체 {all.length}</button>
+        {WRONG_TYPES.map((t) => (
+          <button key={t.id} type="button" className={`chip-btn ${t.id === "flawed" ? "quiet" : ""} ${wt === t.id ? "on" : ""}`} disabled={!count(t.id)} onClick={() => setWt(t.id)}>
+            {t.label} {count(t.id)}
+          </button>
+        ))}
+        {count("none") ? <button type="button" className={`chip-btn quiet ${wt === "none" ? "on" : ""}`} onClick={() => setWt("none")}>유형 미선택 {count("none")}</button> : null}
+      </div>
+      {!ids.length ? <p className="meta">아직 모인 문항이 없어요.</p> : null}
+      <ol className="result-list note-list">
+        {ids.map((id) => {
+          const q = db.q[id];
+          const n = notes[id];
+          const isOpen = !!open[id];
+          return (
+            <li key={id} className="res ng">
+              <button type="button" className="res-head" aria-expanded={isOpen} onClick={() => setOpen({ ...open, [id]: !isOpen })}>
+                <span className="res-num" />
+                <span className="res-stem">
+                  {q.stem || `${db.book[q.book_id]?.title || ""} ${q.source || ""}`}
+                  {n?.memo ? <span className="note-memo">{n.memo}</span> : null}
+                </span>
+                <span className={`wtype ${n?.type ? "" : "none"}`}>{n?.type ? wrongTypeLabel(n.type) : "미선택"}</span>
+              </button>
+              {isOpen ? (
+                <div className="res-body">
+                  <p className="meta">{db.book[q.book_id]?.title} {db.round[q.round_id]?.number}회 {q.number}번{inNote.has(id) ? "" : " · 오답노트에서 빠짐"}</p>
+                  <QuestionView q={q} resp={undefined} reveal={true} interactive={false} />
+                  <Explanation q={q} open={false} />
+                  <WrongNotePanel q={q} wrong={true} />
                 </div>
               ) : null}
             </li>
@@ -378,6 +451,9 @@ function Review({ db }: { db: DB }) {
   const st = useStore();
   const wrong = wrongNoteIds(db);
   const bm = bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden);
+  const [wt, setWt] = useState<WrongType | "none" | "">("");
+  const wcount = wrongTypeCounts(db);
+  const wsel = wt ? wcount[wt] : wrong.length;
   const [books, setBooks] = useState<string[]>([]);
   const [type, setType] = useState("");
   const [src, setSrc] = useState("");
@@ -407,19 +483,31 @@ function Review({ db }: { db: DB }) {
           <h2 id="wn-t" className="section-title">오답노트</h2>
           <span className="rb-count ng-text">{wrong.length}</span>
         </div>
-        <p className="meta">틀린 문항이 모여요. 이어서 2번 연속 맞히면 빠져요.</p>
+        <p className="meta">틀린 문항이 모여요. 이어서 2번 연속 맞히면 빠져요. 유형을 고르면 그 유형만 풀어요.</p>
+        <div className="chips wt-chips" role="group" aria-label="오답 유형">
+          <button type="button" className={`chip-btn ${!wt ? "on" : ""}`} aria-pressed={!wt} onClick={() => setWt("")}>전체 {wrong.length}</button>
+          {WRONG_TYPES.filter((t) => t.id !== "flawed").map((t) => (
+            <button key={t.id} type="button" className={`chip-btn ${wt === t.id ? "on" : ""}`} aria-pressed={wt === t.id} disabled={!wcount[t.id]} title={t.hint} onClick={() => setWt(t.id)}>
+              {t.label} {wcount[t.id]}
+            </button>
+          ))}
+          {wcount.none ? (
+            <button type="button" className={`chip-btn quiet ${wt === "none" ? "on" : ""}`} aria-pressed={wt === "none"} onClick={() => setWt("none")}>유형 미선택 {wcount.none}</button>
+          ) : null}
+        </div>
         <div className="row">
-          <button type="button" className="btn primary" disabled={!wrong.length} onClick={() => go("/play/wrong?mode=practice")}>다시 풀기</button>
-          <button type="button" className="btn ghost" disabled={!wrong.length} onClick={() => go("/play/wrong?mode=flash")}>카드로 넘기기</button>
+          <button type="button" className="btn primary" disabled={!wsel} onClick={() => go(`/play/wrong?mode=practice${wt ? `&wt=${wt}` : ""}`)}>다시 풀기</button>
+          <button type="button" className="btn ghost" disabled={!wsel} onClick={() => go(`/play/wrong?mode=flash${wt ? `&wt=${wt}` : ""}`)}>카드로 넘기기</button>
+          <a className="btn ghost" href={`#/notes${wt ? `?wt=${wt}` : ""}`}>메모 모아 보기</a>
         </div>
       </section>
 
       <section className="review-block" aria-labelledby="bm-t">
         <div className="rb-head">
-          <h2 id="bm-t" className="section-title">북마크</h2>
+          <h2 id="bm-t" className="section-title">찍은 문제</h2>
           <span className="rb-count">{bm.length}</span>
         </div>
-        <p className="meta">문항 오른쪽 위 책갈피를 누르면 여기에 모여요.</p>
+        <p className="meta">풀면서 문항 오른쪽 위 '찍음'을 누르거나, 맞힌 뒤 '확신 없이 맞혔나요?'에서 고르면 여기에 모여요. 시험 결과 화면에서는 펼쳐진 채로 보여요.</p>
         <div className="row">
           <button type="button" className="btn primary" disabled={!bm.length} onClick={() => go("/play/bookmarks?mode=practice")}>다시 풀기</button>
           <button type="button" className="btn ghost" disabled={!bm.length} onClick={() => go("/play/bookmarks?mode=flash")}>카드로 넘기기</button>
@@ -643,7 +731,7 @@ function Account({ reboot, db, source }: { reboot: () => void; db: DB; source: "
   if (!c.email)
     return (
       <div className="account">
-        <p className="meta">로그인하면 풀이 기록과 북마크가 폰과 컴퓨터에 자동으로 맞춰져요.</p>
+        <p className="meta">로그인하면 풀이 기록, 오답 메모, 찍은 문제가 폰과 컴퓨터에 자동으로 맞춰져요.</p>
         <LoginForm compact onDone={reboot} />
       </div>
     );
@@ -851,7 +939,7 @@ function Stats({ db, reboot, source }: { db: DB; reboot: () => void; source: "lo
           <button type="button" className="link-btn danger" onClick={() => setArmReset(true)}>기록 모두 지우기</button>
         ) : (
           <div className="row">
-            <span className="meta">풀이 기록과 북마크가 모두 지워지고 되돌릴 수 없어요.</span>
+            <span className="meta">풀이 기록, 오답 메모, 찍은 문제가 모두 지워지고 되돌릴 수 없어요.</span>
             <button type="button" className="btn ghost" onClick={() => setArmReset(false)}>취소</button>
             <button type="button" className="btn ng" onClick={() => { store.reset(); setArmReset(false); setMsg("기록을 모두 지웠어요."); }}>모두 지우기</button>
           </div>
@@ -963,6 +1051,7 @@ export function App() {
   else if (p0 === "play") view = <Play db={db} path={rest} query={route.query} />;
   else if (p0 === "result") view = <Result db={db} id={rest[0]} />;
   else if (p0 === "review") view = <Review db={db} />;
+  else if (p0 === "notes") view = <NotesPage db={db} query={route.query} />;
   else if (p0 === "stats") view = <Stats db={db} reboot={reboot} source={boot.source} />;
   else if (p0 === "cards") {
     if (rest[0] === "play") view = <CardPlay query={route.query} />;
@@ -973,7 +1062,7 @@ export function App() {
   }
   else view = <NotFound />;
 
-  const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0;
+  const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0 === "notes" ? "review" : p0;
   return (
     <div className={`shell ${playing ? "is-playing" : ""}`}>
       {!playing ? <Nav active={active} /> : null}

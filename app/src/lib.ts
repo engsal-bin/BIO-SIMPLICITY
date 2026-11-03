@@ -618,7 +618,7 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-export const CIRCLED = ["①", "②", "③", "④", "⑤"];
+export const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"];
 
 export function answerText(q: Question): string {
   if (q.type === "mcq") return ((q.answer as number[]) || []).map((i) => `${CIRCLED[i]} ${q.choices[i] ?? ""}`).join(", ");

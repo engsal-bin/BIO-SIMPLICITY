@@ -207,7 +207,23 @@ export async function uploadFromLocal(raw: RawDB, onProgress: (msg: string) => v
   return uploadRows(rows, onProgress);
 }
 
+/** 올릴 meta(책·회차 목록)를 클라우드에 이미 있는 meta와 합친다.
+    같은 id는 새것으로 바꾸고, 묶음에 없는 책·회차는 그대로 둔다(책 하나만 담은 묶음을 올려도 다른 책이 사라지지 않게) */
+async function mergeMeta(meta: { books: any[]; rounds: any[] }) {
+  const got: { data: any }[] = await (await rest("content?select=data&id=eq.meta")).json();
+  const old = got[0]?.data;
+  if (!old) return meta;
+  const merge = (a: any[], b: any[]) => {
+    const byId = new Map(b.map((x) => [x.id, x]));
+    const out = a.map((x) => byId.get(x.id) ?? x);
+    for (const x of b) if (!a.some((y) => y.id === x.id)) out.push(x);
+    return out;
+  };
+  return { ...old, books: merge(old.books || [], meta.books || []), rounds: merge(old.rounds || [], meta.rounds || []) };
+}
+
 async function uploadRows(rows: { id: string; data: any }[], onProgress: (msg: string) => void): Promise<number> {
+  rows = await Promise.all(rows.map(async (r) => (r.id === "meta" ? { id: r.id, data: await mergeMeta(r.data) } : r)));
   const b = { rows };
   let n = 0;
   for (const r of b.rows) {

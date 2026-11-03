@@ -208,6 +208,10 @@ p { margin: 0 0 0.6em; }
 .st dt { font-weight: 700; color: var(--hema); }
 .st dd { margin: 0 0 4px; }
 .choices { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+/* 선택지 글이 그림 속에 있는 문항(스캔본): 번호만 한 줄로 */
+.choices.marks-only { grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); }
+.choices.marks-only .choice { grid-template-columns: 1fr; justify-items: center; }
+.choices.marks-only .ctext { display: none; }
 .choice {
   width: 100%; display: grid; grid-template-columns: 1.8em 1fr; align-items: start; gap: 6px;
   text-align: left; padding: 12px 14px; background: var(--surface);

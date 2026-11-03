@@ -105,7 +105,7 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
       ) : null}
 
       {q.type === "mcq" ? (
-        <ol className="choices">
+        <ol className={`choices${q.choices.every((c) => !c) ? " marks-only" : ""}`}>
           {q.choices.map((c, i) => {
             const chosen = resp === i;
             const correct = (q.answer as number[]).includes(i);

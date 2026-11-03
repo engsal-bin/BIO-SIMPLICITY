@@ -47,6 +47,8 @@ python3 extract/make_bundle.py app/public bioquiz-content.json
 ```
 
 만든 `bioquiz-content.json`을 앱의 기록 → 계정·동기화 → *문항 데이터 바꾸기*로 올린다. 책 단위로 나뉘어 있어 다른 기기는 바뀐 책만 다시 받는다.
+올릴 때 `meta`(책·회차 목록)는 클라우드에 있던 것과 합친다(같은 id는 새것으로). 그래서 책 하나만 담은 묶음을 올려도 다른 책은 그대로 남는다.
+스캔본처럼 글을 뽑을 수 없는 책은 문항 영역 그림을 `images`에 넣고 `choices`를 빈 글자로 두면 번호 버튼만 한 줄로 나온다(선택지 ⑧까지).
 새 책 이름은 `extract.py`의 `BOOK_META`에 한 줄 추가한다.
 단원: `review/topics.json`(문항 id → 단원, 검수한 것)에 없는 새 문항은 `prepare_app_data.py`가 키워드로 추정해 데이터에 `topic`으로 넣는다.
 확인한 뒤 `review/topics.json`에 넣고 `python3 extract/gen_topics_ts.py review/topics.json app/public/data/questions.json app/src/topics.ts`로 앱의 단원표를 다시 만든다. 검수에서 flagged된 문항은 앱에서 숨겨진다.

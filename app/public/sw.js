@@ -1,4 +1,4 @@
-// 오프라인용 서비스 워커: 앱 파일(과 있으면 문항·그림)을 캐시해 두고 먼저 꺼내 쓴다.
+// 오프라인용 서비스 워커: 앱 파일(과 있으면 문항·그림)을 캐시해 두고 인터넷이 안 될 때 꺼내 쓴다.
 // 클라우드(Supabase) 요청은 캐시하지 않는다. 클라우드 문항은 앱이 IndexedDB에 따로 남긴다.
 // 새로 빌드하면 build.sh가 VERSION을 바꿔 새로 받게 한다.
 const VERSION = "__VERSION__";
@@ -22,19 +22,21 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// 앱 파일은 네트워크 먼저(새로 배포한 코드를 바로 쓰도록), 안 되면 캐시. 그 밖(글꼴 등)은 캐시 먼저.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
-  e.respondWith(
-    caches.match(e.request).then(
-      (hit) =>
-        hit ||
-        fetch(e.request).then((res) => {
-          if (res.ok && (new URL(e.request.url).origin === location.origin || e.request.url.includes("fonts.g"))) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        }),
-    ),
-  );
+  const url = new URL(e.request.url);
+  const same = url.origin === location.origin;
+  const save = (res) => {
+    if (res.ok && (same || e.request.url.includes("fonts.g"))) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(e.request, copy));
+    }
+    return res;
+  };
+  if (same) {
+    e.respondWith(fetch(e.request).then(save).catch(() => caches.match(e.request).then((hit) => hit || Response.error())));
+    return;
+  }
+  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then(save)));
 });

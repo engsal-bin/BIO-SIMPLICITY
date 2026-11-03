@@ -146,6 +146,49 @@ function rowsToRaw(rows: Record<string, ContentRow>): RawDB | null {
   return { books: meta.books, rounds: meta.rounds, questions };
 }
 
+const KNOWN_BOOKS: Record<string, { title: string; year: number }> = {
+  b2022: { title: "BIOLOGY 2022", year: 2022 },
+  b2024: { title: "BIOLOGY 2024", year: 2024 },
+  s2025: { title: "SIMPLICITY 2025", year: 2025 },
+  b2026: { title: "TB 최신기출 2026", year: 2026 },
+};
+const BOOK_ORDER = ["b2022", "b2024", "s2025", "b2026"];
+
+/** meta(책·회차 목록)에 빠진 책·회차가 있으면 book: 행의 문항에서 되살린다.
+    (예전 앱으로 책 하나만 담은 묶음을 올려 meta가 덮어써진 경우) 고칠 게 없으면 null */
+function repairMeta(rows: Record<string, ContentRow>): { books: any[]; rounds: any[] } | null {
+  const meta = rows["meta"]?.data || { books: [], rounds: [] };
+  const books: any[] = [...(meta.books || [])];
+  const rounds: any[] = [...(meta.rounds || [])];
+  const roundIds = new Set(rounds.map((r) => r.id));
+  const bookIds = new Set(books.map((b) => b.id));
+  const counts: Record<string, { book: string; n: number }> = {};
+  for (const r of Object.values(rows)) {
+    if (!r.id.startsWith("book:")) continue;
+    for (const q of r.data.questions as Question[]) {
+      const c = (counts[q.round_id] ||= { book: q.book_id, n: 0 });
+      c.n++;
+    }
+  }
+  let changed = false;
+  for (const [rid, c] of Object.entries(counts)) {
+    if (roundIds.has(rid)) continue;
+    const m = rid.match(/-r(\d+)$/);
+    rounds.push({ id: rid, book_id: c.book, number: m ? +m[1] : rounds.length + 1, part: null, time_limit_sec: 420, question_count: c.n });
+    changed = true;
+    if (!bookIds.has(c.book)) {
+      books.push({ id: c.book, ...(KNOWN_BOOKS[c.book] || { title: c.book, year: null }), round_count: 0 });
+      bookIds.add(c.book);
+    }
+  }
+  if (!changed) return null;
+  const rank = (id: string) => (BOOK_ORDER.indexOf(id) < 0 ? 99 : BOOK_ORDER.indexOf(id));
+  books.sort((a, b) => rank(a.id) - rank(b.id));
+  for (const b of books) b.round_count = rounds.filter((r) => r.book_id === b.id).length;
+  rounds.sort((a, b) => rank(a.book_id) - rank(b.book_id) || a.number - b.number);
+  return { ...meta, books, rounds };
+}
+
 /** 로그인한 상태에서 문항을 불러온다. 바뀐 행만 새로 받고, 인터넷이 안 되면 기기에 남겨 둔 것을 쓴다.
     반환: 문항(없으면 null = 아직 올린 문항이 없음) */
 export async function loadCloudContent(): Promise<{ raw: RawDB | null; offline: boolean }> {
@@ -159,7 +202,17 @@ export async function loadCloudContent(): Promise<{ raw: RawDB | null; offline: 
       const got: ContentRow[] = await (await rest(`content?select=id,data,updated_at&id=eq.${encodeURIComponent(id)}`)).json();
       if (got[0]) rows[id] = got[0];
     }
-    if (need.length || !cached) await idb.set("content", { owner: auth!.user.id, rows }).catch(() => {});
+    const fixed = repairMeta(rows);
+    if (fixed) {
+      // 되살린 목록을 클라우드에도 저장해 다른 기기도 바로 고쳐지게 한다
+      await rest("content?on_conflict=id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ id: "meta", data: fixed }),
+      }).catch(() => {});
+      rows["meta"] = { id: "meta", data: fixed, updated_at: "" };
+    }
+    if (need.length || !cached || fixed) await idb.set("content", { owner: auth!.user.id, rows }).catch(() => {});
     return { raw: rowsToRaw(rows), offline: false };
   } catch (e) {
     if (e instanceof NetError && Object.keys(rows).length) return { raw: rowsToRaw(rows), offline: true };

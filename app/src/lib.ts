@@ -257,6 +257,9 @@ export type Session = {
   durationSec: number;
   /** 마지막으로 고친 시각(스스로 채점 등). 동기화 때 더 최근 것을 남긴다 */
   u?: number;
+  /** 종이로 풀고 결과만 입력한 회차. 문항마다 기록 시각은 paperT + 순번(ms) */
+  paper?: boolean;
+  paperT?: number;
 };
 /* 오답 유형: 틀린 이유를 고르면 오답노트에서 유형별로 모아 볼 수 있다 */
 export type WrongType = "unknown" | "misconcept" | "data" | "slip" | "flawed";
@@ -433,6 +436,38 @@ export const store = {
     });
     if (changed + touchedSessions === 0) return;
     commit({ ...state, attempts, sessions: sesNext });
+  },
+  /** 종이로 푼 결과를 한 번에 기록한다. 틀림·찍음만 표시하면 나머지는 맞음.
+      edit = 전에 입력한 종이 기록(같은 세션)을 고칠 때. 기록은 지우지 않고 u를 붙여 고친다(동기화로 되살아나지 않게). */
+  recordPaper(s: Session, guessed: Set<string>, edit?: Session) {
+    const now = Date.now();
+    const base = edit?.paperT ?? s.paperT ?? now;
+    let attempts = state.attempts;
+    if (edit) {
+      const idx = new Map(s.qids.map((q, i) => [`${q}|${base + i}|paper`, q]));
+      attempts = attempts.map((a) => {
+        const q = idx.get(attemptKey(a));
+        if (!q) return a;
+        const ok = s.results[q] === true;
+        return a.ok === ok ? a : { ...a, ok, u: now };
+      });
+      // 이번에 새로 들어간 문항(예전엔 없던 것)은 새로 기록
+      const have = new Set(attempts.filter((a) => a.m === "paper").map(attemptKey));
+      s.qids.forEach((q, i) => {
+        if (!have.has(`${q}|${base + i}|paper`)) attempts = [...attempts, { q, ok: s.results[q] === true, m: "paper", t: base + i }];
+      });
+    } else {
+      attempts = [...attempts, ...s.qids.map((q, i): Attempt => ({ q, ok: s.results[q] === true, m: "paper", t: base + i }))];
+    }
+    const bookmarks = { ...state.bookmarks };
+    for (const q of s.qids) {
+      const on = bookmarks[q] > 0;
+      if (guessed.has(q) && !on) bookmarks[q] = now;
+      // 고칠 때만 해제한다(처음 입력할 때는 원래 찍음 표시를 건드리지 않음)
+      if (edit && !guessed.has(q) && on) bookmarks[q] = -now;
+    }
+    const others = state.sessions.filter((x) => x.id !== s.id);
+    commit({ ...state, attempts: attempts.sort((x, y) => x.t - y.t), bookmarks, sessions: [...others, { ...s, paper: true, paperT: base, u: now }] });
   },
   saveSession(s: Session) {
     const others = state.sessions.filter((x) => x.id !== s.id);
@@ -627,13 +662,32 @@ export function wrongTypeCounts(db: DB): Record<WrongType | "none", number> {
   return out;
 }
 
-export function lastRoundSession(roundId: string): Session | undefined {
-  const list = state.sessions.filter((s) => s.kind === "round" && s.roundId === roundId);
-  return list.sort((a, b) => b.startedAt - a.startedAt)[0];
+/** 이 회차를 푼 기록(실전·한 문제씩·카드·종이 모두), 최근 것부터 */
+export function roundSessions(roundId: string): Session[] {
+  return state.sessions.filter((s) => s.roundId === roundId).sort((a, b) => b.startedAt - a.startedAt);
 }
 
+export function lastRoundSession(roundId: string): Session | undefined {
+  return roundSessions(roundId)[0];
+}
+
+/** 문항마다 가장 최근에 푼 결과(어떤 방식으로 풀었든). 한 번도 안 푼 문항은 빠진다 */
+export function roundLatest(roundId: string): Record<string, boolean | null> {
+  const out: Record<string, boolean | null> = {};
+  for (const s of roundSessions(roundId)) for (const [q, r] of Object.entries(s.results)) if (!(q in out)) out[q] = r;
+  return out;
+}
+
+/** 회차의 모든 문항을 (나눠서라도) 한 번씩 풀었는지 */
+export function roundDone(roundId: string, qids: string[]): boolean {
+  if (!qids.length) return false;
+  const latest = roundLatest(roundId);
+  return qids.every((q) => q in latest);
+}
+
+/** 최고 점수: 실전·한 문제씩·종이로 끝까지 푼 기록에서(카드는 '알았어요'라 뺀다) */
 export function bestScore(roundId: string): number | null {
-  const list = state.sessions.filter((s) => s.kind === "round" && s.roundId === roundId);
+  const list = roundSessions(roundId).filter((s) => s.kind !== "flash" && s.qids.every((q) => q in s.results));
   if (!list.length) return null;
   return Math.max(...list.map((s) => Object.values(s.results).filter((x) => x === true).length));
 }

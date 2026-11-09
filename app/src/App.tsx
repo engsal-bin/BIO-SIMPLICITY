@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DB, Question, Round, answerText, bestScore, go, lastRoundSession, qStats, shuffle, store,
+  DB, Question, Round, Session, answerText, bestScore, go, qStats, shuffle, store, roundLatest, roundDone, roundSessions, uid,
   streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, bookmarkedIds, buildDB, loadLocalRaw,
   TOPIC_NAMES, topicShort, topicStats, weakTopics, gradeDetail, WRONG_TYPES, WrongType, wrongTypeCounts, wrongTypeLabel,
 } from "./lib";
@@ -38,17 +38,23 @@ function Nav({ active }: { active: string }) {
   );
 }
 
+/** 회차 진행 띠: 문항마다 가장 최근 결과(실전·한 문제씩·카드·종이 어느 방식이든) */
 function roundCells(db: DB, r: Round): Cell[] {
-  const s = lastRoundSession(r.id);
+  const latest = roundLatest(r.id);
   const qs = db.questionsOf[r.id] || [];
-  return qs.map((q) => (s ? (q.id in s.results ? s.results[q.id] : "empty") : "empty"));
+  return qs.map((q) => (q.id in latest ? latest[q.id] : "empty"));
 }
+
+const isRoundDone = (db: DB, r: Round) => roundDone(r.id, (db.questionsOf[r.id] || []).map((q) => q.id));
 
 function bookProgress(db: DB, bookId: string) {
   const rounds = db.roundsOf[bookId] || [];
-  const done = rounds.filter((r) => lastRoundSession(r.id)).length;
+  const done = rounds.filter((r) => isRoundDone(db, r)).length;
   return { done, total: rounds.length };
 }
+
+/** 지난 기록에 붙이는 풀이 방식 이름 */
+const sessionMode = (s: Session) => (s.paper ? "종이" : s.kind === "round" ? "실전" : s.kind === "flash" ? "카드" : "한 문제씩");
 
 /** 단원 이름들 → 주소에 넣을 번호 목록 */
 const topicParam = (names: string[]) => names.map((n) => TOPIC_NAMES.indexOf(n)).filter((i) => i >= 0).join(",");
@@ -63,7 +69,7 @@ function Home({ db }: { db: DB }) {
   const today = st.attempts.filter((a) => dayKey(a.t) === dayKey(Date.now()));
   const todayOk = today.filter((a) => a.ok).length;
   const streak = streakDays();
-  const next = db.rounds.find((r) => !lastRoundSession(r.id));
+  const next = db.rounds.find((r) => !isRoundDone(db, r));
   const lastSession = [...st.sessions].sort((a, b) => b.startedAt - a.startedAt)[0];
   const weak = weakTopics(db);
 
@@ -79,11 +85,12 @@ function Home({ db }: { db: DB }) {
         <section className="hero-round" aria-labelledby="next-t">
           <p className="hero-kicker">다음 회차</p>
           <h2 id="next-t">{db.book[next.book_id].title} {next.number}회</h2>
-          <Strip cells={roundCells(db, next)} size="m" label="아직 풀지 않은 회차" />
+          <Strip cells={roundCells(db, next)} size="m" label="다음 회차 진행" />
           <p className="meta">{(db.questionsOf[next.id] || []).length}문항, 제한시간 7분</p>
           <div className="row">
             <button type="button" className="btn primary" onClick={() => go(`/play/round/${next.id}?mode=exam`)}>시작하기</button>
             <button type="button" className="btn ghost" onClick={() => go(`/round/${next.id}`)}>다른 방식으로</button>
+            <button type="button" className="btn ghost" onClick={() => go(`/paper/${next.id}`)}>종이로 푼 결과 입력</button>
           </div>
         </section>
       ) : (
@@ -194,7 +201,8 @@ function RoundPage({ db, id }: { db: DB; id: string }) {
   if (!r) return <NotFound />;
   const b = db.book[r.book_id];
   const qs = db.questionsOf[id] || [];
-  const sessions = st.sessions.filter((s) => s.kind === "round" && s.roundId === id).sort((a, b) => b.startedAt - a.startedAt);
+  void st;
+  const sessions = roundSessions(id);
   const types = qs.reduce((m, q) => ((m[q.type] = (m[q.type] || 0) + 1), m), {} as Record<string, number>);
   return (
     <main className="page">
@@ -218,6 +226,10 @@ function RoundPage({ db, id }: { db: DB; id: string }) {
           <span className="mode-name">카드로 넘기기</span>
           <span className="meta">문제를 보고 답을 떠올린 뒤 뒤집어요</span>
         </button>
+        <button type="button" className="mode" onClick={() => go(`/paper/${id}`)}>
+          <span className="mode-name">종이로 푼 결과 입력</span>
+          <span className="meta">프린트로 푼 뒤 틀린 문제·찍은 문제만 눌러 기록해요</span>
+        </button>
       </div>
       {sessions.length ? (
         <section>
@@ -228,7 +240,10 @@ function RoundPage({ db, id }: { db: DB; id: string }) {
               return (
                 <li key={s.id}>
                   <a href={`#/result/${s.id}`}>
-                    <span>{new Date(s.startedAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}</span>
+                    <span className="hist-date">
+                      {new Date(s.startedAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                      <span className="hist-mode">{sessionMode(s)}</span>
+                    </span>
                     <Strip cells={s.qids.map((q) => (q in s.results ? s.results[q] : "empty"))} size="s" />
                     <span className="round-score">{ok}/{s.qids.length}</span>
                   </a>
@@ -238,6 +253,128 @@ function RoundPage({ db, id }: { db: DB; id: string }) {
           </ul>
         </section>
       ) : null}
+    </main>
+  );
+}
+
+/* ───────── 종이로 푼 결과 입력 ───────── */
+
+const todayStrOf = (t: number) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const todayStr = () => todayStrOf(Date.now());
+
+function PaperEntry({ db, id, editId }: { db: DB; id: string; editId: string }) {
+  const st = store.get();
+  const r = db.round[id];
+  const edit = editId ? st.sessions.find((x) => x.id === editId && x.paper) : undefined;
+  const qs = r ? db.questionsOf[id] || [] : [];
+  const [wrong, setWrong] = useState<Set<string>>(() => new Set(edit ? edit.qids.filter((q) => edit.results[q] === false) : []));
+  const [guess, setGuess] = useState<Set<string>>(() => new Set(edit ? edit.qids.filter((q) => st.bookmarks[q] > 0) : []));
+  const [date, setDate] = useState(() => todayStrOf(edit ? edit.startedAt : Date.now()));
+  const [mins, setMins] = useState(edit?.durationSec ? String(Math.round((edit.durationSec / 60) * 10) / 10) : "");
+  const [quick, setQuick] = useState("");
+  if (!r) return <NotFound />;
+  const b = db.book[r.book_id];
+
+  const flip = (set: Set<string>, setter: (s: Set<string>) => void, qid: string) => {
+    const n = new Set(set);
+    n.has(qid) ? n.delete(qid) : n.add(qid);
+    setter(n);
+  };
+  /** '2, 4 7-9' 처럼 번호를 적으면 틀림으로 표시 */
+  function applyQuick() {
+    const n = new Set(wrong);
+    for (const part of quick.split(/[^0-9-]+/).filter(Boolean)) {
+      const [a, z] = part.split("-").map(Number);
+      for (let i = a; i <= (z || a); i++) if (qs[i - 1]) n.add(qs[i - 1].id);
+    }
+    setWrong(n);
+    setQuick("");
+  }
+
+  function save() {
+    const qids = qs.map((q) => q.id);
+    const results: Record<string, boolean> = {};
+    for (const q of qids) results[q] = !wrong.has(q);
+    // 오늘이면 지금 시각, 지난 날짜면 그날 저녁 9시로
+    const isToday = date === todayStr();
+    const t = isToday || !date ? Date.now() : new Date(`${date}T21:00:00`).getTime();
+    const dur = Math.max(0, Math.round(Number(mins.replace(",", ".")) * 60)) || 0;
+    const s: Session = {
+      id: edit?.id || uid(),
+      kind: "round",
+      paper: true,
+      title: `${b.title} ${r.number}회`,
+      roundId: id,
+      back: `/round/${id}`,
+      qids,
+      results,
+      resps: {},
+      startedAt: edit ? (date === todayStrOf(edit.startedAt) ? edit.startedAt : t) : t,
+      durationSec: dur,
+      paperT: edit?.paperT,
+    };
+    store.recordPaper(s, guess, edit);
+    go(`/result/${s.id}`, true);
+  }
+
+  const cells: Cell[] = qs.map((q) => !wrong.has(q.id));
+  const nWrong = qs.filter((q) => wrong.has(q.id)).length;
+  const nGuess = qs.filter((q) => guess.has(q.id)).length;
+  return (
+    <main className="page paper">
+      <a className="back" href={`#/round/${id}`}>{b.title} {r.number}회</a>
+      <h1 className="page-title">{edit ? "종이 기록 고치기" : "종이로 푼 결과 입력"}</h1>
+      <p className="lede">틀린 문제와 찍은 문제만 눌러 주세요. 나머지는 맞힌 것으로 기록돼요. 저장하면 디지털로 푼 것처럼 오답노트·찍은 문제·통계에 들어가요.</p>
+      <Strip cells={cells} label="입력한 결과" />
+
+      <div className="paper-quick">
+        <div className="field">
+          <label htmlFor="pq">틀린 번호 한 번에 입력</label>
+          <input id="pq" inputMode="numeric" placeholder="예: 2, 4, 7-9" value={quick} onChange={(e) => setQuick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && applyQuick()} />
+        </div>
+        <button type="button" className="btn ghost" disabled={!quick.trim()} onClick={applyQuick}>표시</button>
+      </div>
+
+      <ol className="paper-list">
+        {qs.map((q, i) => {
+          const ng = wrong.has(q.id);
+          const gs = guess.has(q.id);
+          return (
+            <li key={q.id} className={`paper-row ${ng ? "ng" : "ok"}`}>
+              <span className="res-num">{i + 1}</span>
+              <span className="paper-stem">{q.stem || q.source || ""}</span>
+              <button type="button" className={`paper-tg wrong ${ng ? "on" : ""}`} aria-pressed={ng} aria-label={`${i + 1}번 틀림`} onClick={() => flip(wrong, setWrong, q.id)}>
+                {ng ? "틀림" : "맞음"}
+              </button>
+              <button type="button" className={`guess-btn ${gs ? "on" : ""}`} aria-pressed={gs} aria-label={`${i + 1}번 찍음`} onClick={() => flip(guess, setGuess, q.id)}>
+                {gs ? "찍음 ✓" : "찍음"}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="paper-meta">
+        <div className="field">
+          <label htmlFor="pd">푼 날짜</label>
+          <input id="pd" type="date" value={date} max={todayStr()} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="pm">걸린 시간(분, 선택)</label>
+          <input id="pm" inputMode="decimal" placeholder="예: 6.5" value={mins} onChange={(e) => setMins(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="row">
+        <button type="button" className="btn primary" onClick={save}>
+          {edit ? "고친 내용 저장" : "기록하기"} · {qs.length - nWrong}/{qs.length}{nGuess ? ` · 찍음 ${nGuess}` : ""}
+        </button>
+        <button type="button" className="btn ghost" onClick={() => go(edit ? `/result/${edit.id}` : `/round/${id}`)}>취소</button>
+      </div>
+      <p className="meta">저장한 뒤 결과 화면에서 틀린 문항마다 오답 유형과 메모를 고를 수 있어요.</p>
     </main>
   );
 }
@@ -339,12 +476,17 @@ function Result({ db, id }: { db: DB; id: string }) {
       <div className="score">
         <span className="score-big">{ok}</span>
         <span className="score-of">/ {qs.length}</span>
-        <span className="meta">{fmtTime(s.durationSec)} 걸림{s.kind === "round" ? (s.durationSec > 420 ? ", 7분 초과" : ", 7분 안에 끝냄") : ""}</span>
+        <span className="meta">
+          {s.paper
+            ? `종이로 풂${s.durationSec ? ` · ${fmtTime(s.durationSec)} 걸림${s.durationSec > 420 ? ", 7분 초과" : ", 7분 안에 끝냄"}` : ""}`
+            : `${fmtTime(s.durationSec)} 걸림${s.kind === "round" ? (s.durationSec > 420 ? ", 7분 초과" : ", 7분 안에 끝냄") : ""}`}
+        </span>
       </div>
       <Strip cells={qs.map((q) => (q.id in s.results ? s.results[q.id] : "empty"))} label="문항별 결과" />
       {pending.length ? <p className="notice">주관식 {pending.length}문항은 정답과 비교해 직접 채점해 주세요.</p> : null}
       <div className="row">
         {wrong ? <button type="button" className="btn primary" onClick={() => go(`/play/retry/${s.id}`)}>틀린 {wrong}문항 다시 풀기</button> : null}
+        {s.paper && s.roundId ? <button type="button" className="btn ghost" onClick={() => go(`/paper/${s.roundId}?edit=${s.id}`)}>입력 고치기</button> : null}
         {s.roundId ? <button type="button" className="btn ghost" onClick={() => go(`/round/${s.roundId}`)}>회차로</button> : null}
       </div>
 
@@ -371,7 +513,7 @@ function Result({ db, id }: { db: DB; id: string }) {
               {isOpen ? (
                 <div className="res-body">
                   <QuestionView q={q} resp={s.resps[q.id]} reveal={true} interactive={q.type === "mcq" || q.type === "blank"} />
-                  {q.type !== "mcq" && s.kind !== "flash" ? <p className="meta">내 답: {respText(q, s.resps[q.id])}</p> : null}
+                  {q.type !== "mcq" && s.kind !== "flash" && !s.paper ? <p className="meta">내 답: {respText(q, s.resps[q.id])}</p> : null}
                   <Explanation q={q} />
                   {r === null ? <SelfGrade onGrade={(v) => selfGrade(q.id, v)} /> : null}
                   {r !== null && s.kind !== "flash" ? <WrongNotePanel q={q} wrong={r === false} /> : null}
@@ -1048,6 +1190,7 @@ export function App() {
   else if (p0 === "books") view = <Books db={db} />;
   else if (p0 === "book") view = <BookPage db={db} id={rest[0]} />;
   else if (p0 === "round") view = <RoundPage db={db} id={rest[0]} />;
+  else if (p0 === "paper") view = <PaperEntry key={route.query.get("edit") || rest[0]} db={db} id={rest[0]} editId={route.query.get("edit") || ""} />;
   else if (p0 === "play") view = <Play db={db} path={rest} query={route.query} />;
   else if (p0 === "result") view = <Result db={db} id={rest[0]} />;
   else if (p0 === "review") view = <Review db={db} />;
@@ -1062,7 +1205,7 @@ export function App() {
   }
   else view = <NotFound />;
 
-  const active = !p0 ? "" : p0 === "book" || p0 === "round" ? "books" : p0 === "result" ? "" : p0 === "notes" ? "review" : p0;
+  const active = !p0 ? "" : p0 === "book" || p0 === "round" || p0 === "paper" ? "books" : p0 === "result" ? "" : p0 === "notes" ? "review" : p0;
   return (
     <div className={`shell ${playing ? "is-playing" : ""}`}>
       {!playing ? <Nav active={active} /> : null}

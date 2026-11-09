@@ -143,7 +143,24 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
   function setResult(ok: boolean, s?: number) {
     if (q.id in results) store.amendLast(q.id, ok);
     else store.record(q.id, ok, spec.kind, s);
-    setResults({ ...results, [q.id]: ok });
+    const next = { ...results, [q.id]: ok };
+    setResults(next);
+    // 회차는 한 문항씩 바로 저장해 둔다(끝내기를 안 누르고 나가도 진행 띠에 남게)
+    if (spec.roundId) store.saveSession(makeSession(next));
+  }
+  function makeSession(res: Record<string, boolean | null>): Session {
+    return {
+      id: sid.current,
+      kind: spec.kind,
+      title: spec.title,
+      roundId: spec.roundId,
+      back: spec.back,
+      qids: qs.map((x) => x.id),
+      results: res,
+      resps,
+      startedAt: started.current,
+      durationSec: Math.round((Date.now() - started.current) / 1000),
+    };
   }
   function check() {
     setRevealed({ ...revealed, [q.id]: true });
@@ -151,18 +168,7 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
     if (g.ok !== null) setResult(g.ok, g.s);
   }
   function finish() {
-    const s: Session = {
-      id: sid.current,
-      kind: spec.kind,
-      title: spec.title,
-      roundId: spec.roundId,
-      back: spec.back,
-      qids: qs.map((x) => x.id),
-      results,
-      resps,
-      startedAt: started.current,
-      durationSec: Math.round((Date.now() - started.current) / 1000),
-    };
+    const s = makeSession(results);
     store.saveSession(s);
     go(`/result/${s.id}`, true);
   }
@@ -268,6 +274,13 @@ export function FlashRunner({ db, spec }: { db: DB; spec: RunSpec }) {
     const res = { ...results, [q.id]: ok };
     setResults(res);
     setFlipped(false);
+    if (spec.roundId && idx < qs.length - 1) {
+      store.saveSession({
+        id: sid.current, kind: "flash", title: spec.title, roundId: spec.roundId, back: spec.back,
+        qids: qs.map((x) => x.id), results: res, resps: {}, startedAt: started.current,
+        durationSec: Math.round((Date.now() - started.current) / 1000),
+      });
+    }
     if (idx < qs.length - 1) setIdx(idx + 1);
     else finish(res);
   }

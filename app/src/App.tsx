@@ -186,6 +186,7 @@ function BookPage({ db, id }: { db: DB; id: string }) {
                 <span className="round-num">{r.number}회</span>
                 <Strip cells={roundCells(db, r)} size="s" label={`${r.number}회 최근 결과`} />
                 <span className={`round-score ${best === null ? "quiet" : ""}`}>{best === null ? "안 풂" : `${best}/${n}`}</span>
+                {r.part ? <span className="round-part">{r.part}</span> : null}
               </a>
             </li>
           );
@@ -207,7 +208,7 @@ function RoundPage({ db, id }: { db: DB; id: string }) {
   return (
     <main className="page">
       <a className="back" href={`#/book/${b.id}`}>{b.title}</a>
-      <h1 className="page-title">{r.number}회</h1>
+      <h1 className="page-title">{r.number}회{r.part ? <span className="title-part">{r.part}</span> : null}</h1>
       <p className="lede">
         {qs.length}문항 · 객관식 {types.mcq || 0}
         {types.blank ? ` · 빈칸 ${types.blank}` : ""}

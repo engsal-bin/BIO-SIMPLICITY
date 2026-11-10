@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CIRCLED, Question, Resp, WRONG_TYPES, answerText, blankAccepted, blankMatch, store, useStore, wrongTypeLabel } from "./lib";
+import { Markdown, looksMarkdown, usedImgs } from "./Markdown";
 
 /** 회차 진행 띠: 칸마다 정답(보라)·오답(분홍)·미채점·현재 */
 export type Cell = true | false | null | "answered" | "empty";
@@ -155,7 +156,7 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
 
       {q.passage ? (
         <div className="passage">
-          <PassageText text={q.passage} />
+          {looksMarkdown(q.passage) ? <Markdown text={q.passage} imgs={q.images} /> : <PassageText text={q.passage} />}
         </div>
       ) : null}
 
@@ -276,8 +277,8 @@ export function Explanation({ q, open = true }: { q: Question; open?: boolean })
           </button>
           {show ? (
             <div className="explain-body">
-              <Paragraphs text={q.explanation} />
-              {q.explanation_images.map((src) => (
+              <Markdown text={q.explanation} imgs={q.explanation_images} />
+              {q.explanation_images.filter((_, i) => !usedImgs(q.explanation).has(i)).map((src) => (
                 <figure key={src} className="figure">
                   <img src={src} alt="해설 그림" loading="lazy" />
                 </figure>

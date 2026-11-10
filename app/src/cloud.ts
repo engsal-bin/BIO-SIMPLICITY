@@ -152,8 +152,9 @@ const KNOWN_BOOKS: Record<string, { title: string; year: number }> = {
   s2025: { title: "SIMPLICITY 2025", year: 2025 },
   b2026: { title: "TB 최신기출 2026", year: 2026 },
   e2026: { title: "편입생물 평가문제", year: 2026 },
+  h2325: { title: "한의대 편입 기출 복원 2023–2025", year: 2025 },
 };
-const BOOK_ORDER = ["b2022", "b2024", "s2025", "b2026", "e2026"];
+const BOOK_ORDER = ["b2022", "b2024", "s2025", "b2026", "e2026", "h2325"];
 
 /** meta(책·회차 목록)에 빠진 책·회차가 있으면 book: 행의 문항에서 되살린다.
     (예전 앱으로 책 하나만 담은 묶음을 올려 meta가 덮어써진 경우) 고칠 게 없으면 null */

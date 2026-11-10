@@ -4,6 +4,7 @@
    - 머리줄(항목/내용)과 구분줄(---)은 건너뛴다 */
 import { State, UserDeck } from "./lib";
 import weak1026 from "./decks/2026-10-26-weak.md" with { type: "text" };
+import germ1111 from "./decks/2026-11-11-germ-layers.md" with { type: "text" };
 
 export type Card = { id: string; front: string; back: string; section: string; sectionIndex: number };
 export type DeckSection = { title: string; cards: Card[] };
@@ -11,6 +12,7 @@ export type Deck = { id: string; title: string; builtIn: boolean; createdAt: num
 
 const BUILT_IN: { id: string; md: string; createdAt: number }[] = [
   { id: "b-2026-10-26-weak", md: weak1026, createdAt: Date.UTC(2026, 9, 26, 8) },
+  { id: "b-2026-11-11-germ", md: germ1111, createdAt: Date.UTC(2026, 10, 10, 18) },
 ];
 
 const HEADER_WORDS = new Set(["항목", "용어", "개념", "키워드", "질문", "앞면"]);

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { CIRCLED, Question, Resp, WRONG_TYPES, answerText, blankAccepted, blankMatch, store, useStore, wrongTypeLabel } from "./lib";
+import { CIRCLED, Question, Resp, WRONG_TYPES, mcqPick, pickedList, answerText, blankAccepted, blankMatch, store, useStore, wrongTypeLabel } from "./lib";
 import { Markdown, looksMarkdown, usedImgs } from "./Markdown";
 
 /** 회차 진행 띠: 칸마다 정답(보라)·오답(분홍)·미채점·현재 */
@@ -132,6 +132,16 @@ type QVProps = {
 };
 
 export function QuestionView({ q, resp, setResp, reveal, index, total, interactive = true }: QVProps) {
+  const pick = mcqPick(q);
+  const picked = pickedList(resp);
+  function choose(i: number) {
+    if (!setResp) return;
+    if (pick === 1) return setResp(i);
+    if (picked.includes(i)) return setResp(picked.filter((x) => x !== i));
+    // 정한 개수를 넘으면 가장 먼저 고른 것을 뺀다
+    const next = [...picked, i];
+    setResp(pick > 0 && next.length > pick ? next.slice(next.length - pick) : next);
+  }
   const blanks = q.type === "blank" ? Math.max(q.accepted_answers.length, (q.answer as string[] | null)?.length || 0, 1) : 0;
   return (
     <article className="question" aria-labelledby={`stem-${q.id}`}>
@@ -174,7 +184,7 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
       {q.type === "mcq" ? (
         <ol className={`choices${q.choices.every((c) => !c) ? " marks-only" : ""}`}>
           {q.choices.map((c, i) => {
-            const chosen = resp === i;
+            const chosen = picked.includes(i);
             const correct = (q.answer as number[]).includes(i);
             const cls = reveal ? (correct ? "correct" : chosen ? "wrong" : "") : chosen ? "chosen" : "";
             return (
@@ -184,7 +194,7 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
                   className={`choice ${cls}`}
                   aria-pressed={chosen}
                   disabled={!interactive || reveal || !setResp}
-                  onClick={() => setResp && setResp(i)}
+                  onClick={() => choose(i)}
                 >
                   <span className="mark" aria-hidden="true">{CIRCLED[i]}</span>
                   <span className="ctext">{c}</span>
@@ -195,6 +205,11 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
             );
           })}
         </ol>
+      ) : null}
+      {q.type === "mcq" && pick !== 1 && interactive ? (
+        <p className={`pick-hint ${pick > 0 && picked.length === pick ? "full" : ""}`} role="status">
+          {pick > 0 ? `${pick}개를 고르세요 · ${picked.length}/${pick}` : `해당하는 것을 모두 고르세요 · ${picked.length}개 고름`}
+        </p>
       ) : null}
 
       {q.type === "blank" && interactive ? (

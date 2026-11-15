@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DB, Question, Round, Session, answerText, bestScore, go, qStats, shuffle, store, roundLatest, roundDone, roundSessions, uid,
-  streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, bookmarkedIds, buildDB, loadLocalRaw,
+  streakDays, useRoute, useStore, wrongNoteIds, dayKey, CIRCLED, Resp, pickedList, bookmarkedIds, buildDB, loadLocalRaw,
   TOPIC_NAMES, topicShort, topicStats, weakTopics, gradeDetail, WRONG_TYPES, WrongType, wrongTypeCounts, wrongTypeLabel,
 } from "./lib";
 import { isLoggedIn, loadCloudContent, signIn, signOut, startAutoSync, syncNow, uploadBundle, uploadFromLocal, useCloud } from "./cloud";
@@ -449,7 +449,10 @@ function Play({ db, path, query }: { db: DB; path: string[]; query: URLSearchPar
 
 function respText(q: Question, r: Resp) {
   if (r === undefined || r === null || r === "") return "답 안 함";
-  if (q.type === "mcq") return typeof r === "number" ? `${CIRCLED[r]} ${q.choices[r] ?? ""}` : "답 안 함";
+  if (q.type === "mcq") {
+    const p = pickedList(r);
+    return p.length ? p.sort((a, b) => a - b).map((i) => `${CIRCLED[i]} ${q.choices[i] ?? ""}`).join(", ") : "답 안 함";
+  }
   if (Array.isArray(r)) return r.map((x, i) => `${i + 1}) ${x || "(빈칸)"}`).join("  ");
   return String(r);
 }

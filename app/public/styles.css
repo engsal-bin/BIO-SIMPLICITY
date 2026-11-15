@@ -546,3 +546,7 @@ p { margin: 0 0 0.6em; }
 .md-table th { background: var(--hema-soft); font-weight: 600; white-space: nowrap; }
 .md-img { display: block; max-width: 100%; height: auto; margin: 10px auto; background: #fff; border-radius: var(--radius-s); }
 .passage .md-table { background: var(--surface); }
+
+/* 여러 개 고르는 객관식 */
+.pick-hint { margin: 8px 2px 0; font-size: 0.85rem; color: var(--ink-3); }
+.pick-hint.full { color: var(--hema); font-weight: 600; }

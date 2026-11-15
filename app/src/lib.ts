@@ -212,7 +212,20 @@ export function blankMatch(input: string, accepted: string[]): BlankHit {
 
 export const blankMatches = (input: string, accepted: string[]) => blankMatch(input, accepted) !== false;
 
-export type Resp = number | string[] | string | null | undefined;
+export type Resp = number | number[] | string[] | string | null | undefined;
+
+const KNUM: Record<string, number> = { 두: 2, 세: 3, 네: 4, 다섯: 5, "2": 2, "3": 3, "4": 4, "5": 5 };
+/** 객관식에서 고를 개수. 1 = 하나만, n = n개('두 가지', '2개'), 0 = 개수 제한 없이 여러 개('모두 고르시오') */
+export function mcqPick(q: Question): number {
+  if (q.type !== "mcq") return 1;
+  const ans = (q.answer as number[]) || [];
+  const m = q.stem.match(/(두|세|네|다섯|[2-5])\s*(?:가지|개)(?:를|을)?\s*(?:모두\s*)?(?:고르|골라|선택)/);
+  if (m) return KNUM[m[1]];
+  if (/모두\s*(?:고르|골라|선택)|있는\s*대로\s*(?:고르|골라)/.test(q.stem)) return 0;
+  return 1;
+}
+/** 고른 답을 배열로(하나만 고르는 문항은 숫자 하나) */
+export const pickedList = (r: Resp): number[] => (typeof r === "number" ? [r] : Array.isArray(r) ? (r as unknown[]).filter((x): x is number => typeof x === "number") : []);
 
 export function blankAccepted(q: Question): string[][] {
   return q.accepted_answers.length ? q.accepted_answers : ((q.answer as string[]) || []).map((a) => [a]);
@@ -222,7 +235,16 @@ export function blankAccepted(q: Question): string[][] {
 export type GradeDetail = { ok: boolean | null; s?: number; hits?: BlankHit[] };
 
 export function gradeDetail(q: Question, r: Resp): GradeDetail {
-  if (q.type === "mcq") return { ok: typeof r === "number" && (q.answer as number[]).includes(r) };
+  if (q.type === "mcq") {
+    const ans = (q.answer as number[]) || [];
+    if (mcqPick(q) === 1) return { ok: typeof r === "number" && ans.includes(r) };
+    // 여러 개 고르는 문항: 정답을 빠짐없이, 오답 없이 골라야 정답. 부분 점수 = (맞게 고른 수 - 잘못 고른 수) / 정답 수
+    const picked = [...new Set(pickedList(r))];
+    const hit = picked.filter((i) => ans.includes(i)).length;
+    const miss = picked.length - hit;
+    const ok = hit === ans.length && miss === 0;
+    return { ok, s: ok ? 1 : Math.max(0, hit - miss) / (ans.length || 1) };
+  }
   if (q.type === "blank") {
     const arr = Array.isArray(r) ? r : [];
     const acc = blankAccepted(q);

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { DB, Resp, Session, go, gradeDetail, store, uid } from "./lib";
+import { DB, Resp, Session, go, gradeDetail, mcqPick, pickedList, store, uid } from "./lib";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, WrongNotePanel, fmtTime } from "./ui";
 
 export type RunSpec = {
@@ -35,7 +35,7 @@ export function ExamRunner({ db, spec }: { db: DB; spec: RunSpec }) {
   const elapsed = (now - started.current) / 1000;
   const left = (spec.timeLimit || 420) - elapsed;
   const q = qs[idx];
-  const answered = (r: Resp) => (Array.isArray(r) ? r.some((x) => x && x.trim()) : r !== undefined && r !== null && r !== "");
+  const answered = (r: Resp) => (Array.isArray(r) ? (r as unknown[]).some((x) => typeof x === "number" || (typeof x === "string" && x.trim())) : r !== undefined && r !== null && r !== "");
   const cells: Cell[] = qs.map((x) => (answered(resps[x.id]) ? "answered" : "empty"));
   const unanswered = cells.filter((c) => c === "empty").length;
 
@@ -220,6 +220,12 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
 
 /** 빈칸형 일부만 맞았을 때 '3칸 중 2칸 맞았어요' */
 function partialText(q: DB["questions"][number], r: Resp): string {
+  if (q.type === "mcq") {
+    if (mcqPick(q) === 1) return "";
+    const ans = (q.answer as number[]) || [];
+    const hit = pickedList(r).filter((i) => ans.includes(i)).length;
+    return hit ? `${ans.length}개 중 ${hit}개 맞았어요` : "";
+  }
   if (q.type !== "blank") return "";
   const g = gradeDetail(q, r);
   if (!g.hits || g.ok) return "";

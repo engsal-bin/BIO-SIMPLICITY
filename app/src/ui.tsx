@@ -148,7 +148,7 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
     if (picked.includes(i)) return setResp(picked.filter((x) => x !== i));
     // 정한 개수를 넘으면 가장 먼저 고른 것을 뺀다
     const next = [...picked, i];
-    setResp(pick > 0 && next.length > pick ? next.slice(next.length - pick) : next);
+    setResp(pick > 1 && next.length > pick ? next.slice(next.length - pick) : next);
   }
   const blanks = q.type === "blank" ? Math.max(q.accepted_answers.length, (q.answer as string[] | null)?.length || 0, 1) : 0;
   return (

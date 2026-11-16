@@ -134,9 +134,17 @@ type QVProps = {
 export function QuestionView({ q, resp, setResp, reveal, index, total, interactive = true }: QVProps) {
   const pick = mcqPick(q);
   const picked = pickedList(resp);
+  // 여러 개 고르기: 발문에 '두 가지/모두 고르시오'가 있거나, 그림 문항에서 직접 켠 경우. 고른 답이 배열이면 여러 개로 채점한다
+  const [multiOn, setMultiOn] = useState(pick !== 1 || Array.isArray(resp));
+  const scanned = q.type === "mcq" && pick === 1 && (!q.stem || q.choices.every((c) => !c));
+  function toggleMulti() {
+    const on = !multiOn;
+    setMultiOn(on);
+    if (setResp && picked.length) setResp(on ? picked : picked[picked.length - 1]);
+  }
   function choose(i: number) {
     if (!setResp) return;
-    if (pick === 1) return setResp(i);
+    if (!multiOn) return setResp(i);
     if (picked.includes(i)) return setResp(picked.filter((x) => x !== i));
     // 정한 개수를 넘으면 가장 먼저 고른 것을 뺀다
     const next = [...picked, i];
@@ -206,10 +214,19 @@ export function QuestionView({ q, resp, setResp, reveal, index, total, interacti
           })}
         </ol>
       ) : null}
-      {q.type === "mcq" && pick !== 1 && interactive ? (
-        <p className={`pick-hint ${pick > 0 && picked.length === pick ? "full" : ""}`} role="status">
-          {pick > 0 ? `${pick}개를 고르세요 · ${picked.length}/${pick}` : `해당하는 것을 모두 고르세요 · ${picked.length}개 고름`}
-        </p>
+      {q.type === "mcq" && interactive && !reveal && setResp && (pick !== 1 || scanned) ? (
+        <div className="pick-row">
+          {multiOn ? (
+            <p className={`pick-hint ${pick > 1 && picked.length === pick ? "full" : ""}`} role="status">
+              {pick > 1 ? `${pick}개를 고르세요 · ${picked.length}/${pick}` : `해당하는 것을 모두 고르세요 · ${picked.length}개 고름`}
+            </p>
+          ) : <span />}
+          {scanned ? (
+            <button type="button" className={`guess-btn ${multiOn ? "on" : ""}`} aria-pressed={multiOn} onClick={toggleMulti}>
+              {multiOn ? "여러 개 고르기 ✓" : "여러 개 고르기"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {q.type === "blank" && interactive ? (

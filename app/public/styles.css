@@ -550,3 +550,5 @@ p { margin: 0 0 0.6em; }
 /* 여러 개 고르는 객관식 */
 .pick-hint { margin: 8px 2px 0; font-size: 0.85rem; color: var(--ink-3); }
 .pick-hint.full { color: var(--hema); font-weight: 600; }
+.pick-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.pick-row .pick-hint { margin: 0 2px; }

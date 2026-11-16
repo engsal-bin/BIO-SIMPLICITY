@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { DB, Resp, Session, go, gradeDetail, mcqPick, pickedList, store, uid } from "./lib";
+import { DB, Resp, Session, go, gradeDetail, pickedList, store, uid } from "./lib";
 import { Cell, Explanation, QuestionView, SelfGrade, Strip, WrongNotePanel, fmtTime } from "./ui";
 
 export type RunSpec = {
@@ -221,7 +221,7 @@ export function PracticeRunner({ db, spec }: { db: DB; spec: RunSpec }) {
 /** 빈칸형 일부만 맞았을 때 '3칸 중 2칸 맞았어요' */
 function partialText(q: DB["questions"][number], r: Resp): string {
   if (q.type === "mcq") {
-    if (mcqPick(q) === 1) return "";
+    if (!Array.isArray(r)) return "";
     const ans = (q.answer as number[]) || [];
     const hit = pickedList(r).filter((i) => ans.includes(i)).length;
     return hit ? `${ans.length}개 중 ${hit}개 맞았어요` : "";

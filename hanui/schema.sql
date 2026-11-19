@@ -3,7 +3,7 @@
 -- (members 표와 is_member() 함수를 같이 쓴다).
 -- Supabase 대시보드 → SQL Editor → New query 에 전부 붙여 넣고 Run. 여러 번 실행해도 괜찮다.
 
--- 1) 문항 묶음. 행 id = 'data'(문항) / 'jydata'(집요·생리학 복습). data는 JSON 문자열.
+-- 1) 문항 묶음. 행 id = 'data'(문항) / 'jydata'(집요·생리학 복습) / 'game'(탕전 게임 데이터). data는 JSON 문자열.
 create table if not exists public.hanui_content (
   id text primary key,
   data text not null,

@@ -84,7 +84,7 @@
     return res;
   }
 
-  /* ───────── 문항(hanui_content: 행 id = data / jydata) ───────── */
+  /* ───────── 문항(hanui_content: 행 id = data / jydata / game(탕전 게임)) ───────── */
   async function loadContent() {
     const cached = (await idb.get("content").catch(() => null)) || null;
     const rows = cached && cached.owner === auth.user.id ? Object.assign({}, cached.rows) : {};
@@ -249,8 +249,11 @@
     gate().hidden = true;
     $("#appRoot").hidden = false;
     $("#brandSub").textContent = "1–15강 문제은행 · " + D.items.length + "문항";
+    let G = null;   // 탕전 게임 데이터(hanui_content 'game' 행). 없으면 게임 화면이 안내만 보여 준다.
+    if (got.rows.game) { try { G = JSON.parse(got.rows.game.data); } catch (e) {} }
     api = window.startHanui(D, JD, {
       loadState, saveState, mountAccount,
+      gameData: G, gameVer: got.rows.game ? got.rows.game.updated_at : "",
       onSync: (k, msg) => { sync = { k, msg }; },
     });
     try {

@@ -473,3 +473,8 @@ details.memo-d summary{cursor:pointer;font-size:13px;color:var(--ink2)}
 .ed-bar .seg button{white-space:nowrap}
 .fc-section{text-align:left;right:120px}
 .quiz-card .fc-section{right:18px}
+/* 탕전 게임: game.html을 화면 가득 iframe으로 */
+.app.game-on main{padding:0}
+.app.game-on main > .wrap{display:none}
+.game-host{width:100%;height:calc(100vh - 0px)}
+.game-host iframe{display:block;width:100%;height:100%;border:0;background:var(--paper)}

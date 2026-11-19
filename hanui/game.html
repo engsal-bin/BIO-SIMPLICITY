@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>탕전 학습 게임</title>
+<style>
+:root{
+  --paper:#f6f8f6; --surface:#ffffff; --sunk:#eef2ef; --line:#d8e0db; --ink:#18231f; --ink2:#4c5b55; --ink3:#7c8b85;
+  --celadon:#2f7d6b; --celadon-weak:#dcefe8; --celadon-ink:#1f5c4e;
+  --ok:#2c7a3f; --ok-weak:#e0f1e4; --bad:#b23a32; --bad-weak:#f8e3e0; --warn:#9a6a10; --warn-weak:#f7ecd2; --star:#c98a12;
+  --info:#2e6b8a; --info-weak:#e6f0f6; --pot:#2c3633; --pot-rim:#1d2522;
+  --serif:"Noto Serif KR","Noto Serif CJK KR","Batang",serif; --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#0f1513; --surface:#161e1b; --sunk:#1c2622; --line:#2b3833; --ink:#e4ece8; --ink2:#a9b8b2; --ink3:#77867f;
+  --celadon:#5cb8a1; --celadon-weak:#1d3a33; --celadon-ink:#9fdccb; --ok:#6cc583; --ok-weak:#16301f; --bad:#f08a80; --bad-weak:#3a1c19;
+  --warn:#e2b85a; --warn-weak:#33290f; --star:#f0b84a; --info:#8cc4e0; --info-weak:#16303d; --pot:#0b100e; --pot-rim:#050807; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --paper:#0f1513; --surface:#161e1b; --sunk:#1c2622; --line:#2b3833; --ink:#e4ece8; --ink2:#a9b8b2; --ink3:#77867f;
+  --celadon:#5cb8a1; --celadon-weak:#1d3a33; --celadon-ink:#9fdccb; --ok:#6cc583; --ok-weak:#16301f; --bad:#f08a80; --bad-weak:#3a1c19;
+  --warn:#e2b85a; --warn-weak:#33290f; --star:#f0b84a; --info:#8cc4e0; --info-weak:#16303d; --pot:#0b100e; --pot-rim:#050807; color-scheme:dark }
+*{box-sizing:border-box}
+[hidden],.hidden{display:none!important}
+body.subj-rx .ab-only,body:not(.subj-rx) .rx-only{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;align-items:center}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--celadon);outline-offset:2px}
+.hanja{font-family:var(--serif)}
+.wrapw{width:100%;max-width:1150px}
+
+/* ---------- 상단: 과목 · 제목 · 탭 ---------- */
+.subject-bar{display:flex;gap:4px;margin-bottom:8px;background:var(--sunk);padding:4px;border-radius:12px;max-width:100%;overflow-x:auto}
+.subject-btn{border:0;background:none;padding:7px 14px;border-radius:9px;font-weight:600;font-size:.95rem;color:var(--ink2);white-space:nowrap}
+.subject-btn.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+h1{font-family:var(--serif);font-size:1.6rem;margin:2px 0 10px;text-align:center;letter-spacing:-.01em}
+body.hosted h1{display:none}
+.data-warning{display:none;width:100%;max-width:1150px;background:var(--bad-weak);color:var(--bad);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:.9rem}
+.tabs{display:flex;gap:4px;margin-bottom:12px;max-width:100%;overflow-x:auto;padding-bottom:2px}
+.tab{border:0;background:none;color:var(--ink2);padding:7px 12px;border-radius:8px;font-weight:600;white-space:nowrap}
+.tab:hover{color:var(--ink)}
+.tab.active{background:var(--celadon-weak);color:var(--celadon-ink)}
+.tab .count{background:var(--bad);color:#fff;border-radius:9px;padding:0 6px;font-size:.72rem;margin-left:3px;font-variant-numeric:tabular-nums}
+.tab .count.memo{background:var(--ok)} .tab .count.star{background:var(--star)}
+.page{width:100%;max-width:1150px;display:flex;flex-direction:column;align-items:center}
+.view-seg-bar{display:flex;gap:8px;align-items:center;margin:-2px 0 12px;font-size:.88rem;font-weight:600;color:var(--ink2);flex-wrap:wrap;justify-content:center}
+
+/* ---------- 상태줄 ---------- */
+.status-bar{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;align-items:center;margin-bottom:12px}
+.badge{font-size:.9rem;font-weight:600;background:var(--sunk);padding:6px 12px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.timer-badge{background:var(--warn-weak);color:var(--warn)}
+.timer-badge.urgent{background:var(--bad-weak);color:var(--bad);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.6}}
+.sel{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--surface);font-weight:600;font-size:.85rem;max-width:100%}
+.mode-btn{background:var(--surface);border:1px solid var(--line);padding:6px 12px;border-radius:999px;font-weight:600;font-size:.85rem}
+.mode-btn.review{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg{display:inline-flex;background:var(--sunk);border-radius:9px;padding:3px;gap:2px;max-width:100%;overflow-x:auto}
+.seg button{border:0;background:none;padding:5px 11px;border-radius:7px;font-weight:600;font-size:.84rem;color:var(--ink2);white-space:nowrap}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.toggle{display:inline-flex;gap:6px;align-items:center;font-size:.86rem;font-weight:600;cursor:pointer;color:var(--ink2)}
+.toggle input{accent-color:var(--celadon)}
+kbd{background:var(--surface);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-size:.72rem;font-family:inherit}
+
+/* ---------- 패널 ---------- */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+.section-title{width:100%;font-size:1rem;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.section-title.with-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ---------- 약탕기 게임 (넓은 화면: 좌 선반 · 우 약탕기) ---------- */
+.game-container{display:flex;width:100%;gap:16px;align-items:stretch}
+.game-container > .panel{flex:1;min-width:0}
+.ingredient-section{display:flex;flex-direction:column;height:720px}
+.pot-section{display:flex;flex-direction:column;align-items:center;min-height:720px}
+.search-box{width:100%;padding:10px 12px;font-size:1rem;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;outline:none;background:var(--surface)}
+.search-box:focus{border-color:var(--celadon)}
+.search-help{font-size:.76rem;color:var(--ink3);margin-bottom:10px}
+.ingredient-list{display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;padding:2px 4px 2px 2px;flex:1;align-content:flex-start;-webkit-overflow-scrolling:touch}
+.ingredient-card{background:var(--surface);border:1px solid var(--line);padding:6px 11px;border-radius:10px;cursor:grab;user-select:none;font-family:var(--serif);font-weight:600;font-size:1rem;
+  display:flex;flex-direction:column;align-items:center;line-height:1.25;transition:background .12s,border-color .12s;max-width:100%}
+.ingredient-card small{font-family:var(--sans);font-size:.7rem;color:var(--ink3);font-weight:500}
+.ingredient-card:hover{border-color:var(--celadon)}
+.ingredient-card.in-pot{background:var(--celadon-weak);border-color:var(--celadon);color:var(--celadon-ink)}
+.ingredient-card.in-pot::before{content:"✓";font-size:.7rem;font-family:var(--sans)}
+.ingredient-card.kw{font-family:var(--sans);font-size:.92rem}
+.ingredient-card.active,.combo-card.active{outline:2px solid var(--star);outline-offset:1px}
+.empty-search{color:var(--ink3);font-size:.9rem;padding:10px}
+.freq{font-size:.66rem;color:var(--warn);font-weight:700}
+.alias{font-size:.68rem;color:var(--info);font-weight:500}
+.combo-card{flex:1 1 210px;background:var(--warn-weak);border:1px solid var(--warn);border-radius:12px;padding:7px 12px;cursor:pointer;user-select:none;line-height:1.35}
+.cb-title{font-weight:700;font-size:.92rem;color:var(--warn)}
+.cb-abbr{font-size:.82rem;font-weight:600}
+.cb-ings{font-size:.76rem;color:var(--ink3);font-family:var(--serif)}
+.combo-card.in-pot{background:var(--celadon-weak);border-color:var(--celadon)}
+.combo-card.in-pot .cb-title::before{content:"✓ "}
+.shelf-divider{flex-basis:100%;height:0;border-top:1px dashed var(--line);margin:2px 0}
+
+.target-wrap{text-align:center;margin:2px 0 6px;width:100%}
+.target-no{font-size:.82rem;color:var(--ink3);font-weight:600}
+.target-line{display:flex;justify-content:center;align-items:center;gap:6px}
+.target-prescription{display:inline-block;max-width:100%;font-family:var(--serif);font-size:1.8rem;font-weight:700;color:var(--celadon-ink);
+  background:var(--celadon-weak);padding:6px 20px;border-radius:10px;letter-spacing:1px;overflow-wrap:anywhere;margin:4px 0;line-height:1.35}
+.target-prescription.long{font-size:1.25rem;letter-spacing:0}
+.target-prescription.xlong{font-size:1.02rem;letter-spacing:0}
+.target-reading{font-size:.92rem;color:var(--ink2)}
+.target-alias{font-size:.86rem;color:var(--info);font-weight:600}
+.hint-row{margin-top:6px;min-height:26px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+.hint-btn{background:var(--warn-weak);border:0;color:var(--warn);border-radius:8px;padding:4px 10px;font-weight:600;font-size:.82rem}
+.hint-text{font-size:.86rem;color:var(--warn)}
+.star-btn{background:none;border:0;font-size:1.6rem;line-height:1;color:var(--star);padding:2px 4px}
+.star-btn.off{color:var(--line)}
+.star-btn.small{font-size:1.15rem}
+
+.pot-container{position:relative;width:200px;height:120px;margin-top:6px}
+.pot{width:100%;height:96px;background:var(--pot);border-radius:18px 18px 80px 80px;position:absolute;bottom:0;display:flex;justify-content:center;align-items:center;border:3px solid transparent}
+.pot-rim{position:absolute;top:18px;width:110%;left:-5%;height:18px;background:var(--pot-rim);border-radius:14px;z-index:1}
+.pot.drag-over{border:3px dashed var(--star)}
+.pot-label{color:#cfd8d4;font-size:.88rem;font-weight:600;pointer-events:none;z-index:2}
+.pot-caption{width:100%;margin-top:10px;font-size:.82rem;font-weight:600;color:var(--ink2)}
+.selected-ingredients{margin-top:6px;width:100%;min-height:62px;max-height:120px;background:var(--sunk);border-radius:10px;padding:7px;
+  display:flex;flex-wrap:wrap;gap:5px;overflow-y:auto;align-content:flex-start}
+.selected-ingredients:empty::before{content:"아직 넣은 것이 없어요";color:var(--ink3);font-size:.82rem;padding:4px}
+.selected-card{background:var(--surface);border:1px solid var(--celadon);color:var(--celadon-ink);padding:3px 9px;border-radius:8px;font-size:.88rem;font-weight:600;display:flex;align-items:center;gap:4px}
+.selected-card::after{content:"✕";font-size:.72rem;color:var(--bad)}
+
+.btn-container{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%}
+.action-btn{background:var(--celadon);color:#fff;border:0;padding:9px 16px;font-size:.95rem;font-weight:700;border-radius:9px}
+:root[data-theme="dark"] .action-btn:not(.reset-btn):not(.giveup-btn):not(.memo-btn):not(.next-btn){color:#0f1513}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .action-btn:not(.reset-btn):not(.giveup-btn):not(.memo-btn):not(.next-btn){color:#0f1513}}
+.action-btn:disabled{opacity:.4;cursor:not-allowed}
+.action-btn.reset-btn,.action-btn.giveup-btn{background:var(--sunk);color:var(--ink)}
+.action-btn.memo-btn{background:var(--ok-weak);color:var(--ok)}
+.action-btn.next-btn{background:var(--ink);color:var(--paper)}
+
+.result-area{width:100%;margin-top:10px}
+.result-message{font-weight:700;font-size:1rem;min-height:22px;text-align:center}
+.correct{color:var(--ok)} .wrong{color:var(--bad)} .notice{color:var(--ink2)}
+.answer-chips{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:8px}
+.chip{padding:3px 9px;border-radius:8px;font-size:.88rem;font-weight:600;border:1px solid var(--line);background:var(--surface);display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:center}
+.chip em{font-style:normal;font-size:.72rem;font-weight:500;color:var(--ink3)}
+.chip.ok{background:var(--ok-weak);border-color:var(--ok);color:var(--ok)}
+.chip.miss{border:2px dashed var(--bad);color:var(--bad)}
+.chip.extra{background:var(--sunk);color:var(--ink3);text-decoration:line-through}
+.chip.hl{background:var(--warn-weak);border:2px solid var(--star)}
+.chip .cls{font-size:.68rem;font-weight:500;color:var(--info);background:var(--info-weak);border-radius:6px;padding:0 5px}
+.legend{font-size:.74rem;color:var(--ink3);text-align:center;margin-top:6px}
+.memo-box{margin-top:10px;background:var(--warn-weak);border-left:3px solid var(--star);padding:8px 12px;border-radius:6px;font-size:.88rem}
+.same-box{margin-top:6px;background:var(--info-weak);border-left:3px solid var(--info);padding:8px 12px;border-radius:6px;font-size:.86rem}
+.kbd-help{margin-top:auto;padding-top:12px;font-size:.74rem;color:var(--ink3);text-align:center}
+
+/* ---------- 고르기 게임 ---------- */
+.choice-container{width:100%}
+.choice-panel{display:flex;flex-direction:column;align-items:center;width:100%}
+.target-prescription.herb{font-size:2.2rem;letter-spacing:3px}
+.choice-box{width:100%;margin-top:12px}
+.big-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.easy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.choice-btn{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 26px 9px 11px;text-align:left;
+  display:flex;flex-direction:column;gap:1px;position:relative;min-width:0;transition:border-color .12s,background .12s}
+.choice-btn:hover:not(:disabled){border-color:var(--celadon)}
+.choice-btn .cb-main{font-family:var(--serif);font-weight:700;font-size:1rem;overflow-wrap:anywhere}
+.choice-btn .cb-sub{font-size:.74rem;color:var(--ink3)}
+.choice-btn .key{position:absolute;top:6px;right:8px;font-size:.7rem;color:var(--ink3);font-weight:700}
+.choice-btn .subcnt{color:var(--warn)}
+.choice-btn.sel{background:var(--celadon-weak);border-color:var(--celadon);border-width:2px}
+.choice-btn.sel::after{content:"✓";position:absolute;bottom:6px;right:8px;color:var(--celadon-ink);font-weight:700}
+.choice-btn.correct{background:var(--ok-weak);border-color:var(--ok);border-width:2px}
+.choice-btn.missed{background:var(--ok-weak);border:2px dashed var(--ok)}
+.choice-btn.picked-wrong{background:var(--bad-weak);border-color:var(--bad);border-width:2px}
+.choice-btn:disabled{cursor:default}
+.sub-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-weight:700;flex-wrap:wrap}
+.sub-head .cnt{color:var(--celadon-ink)}
+.multi-submit{margin-top:12px;display:flex;justify-content:center}
+.path-box{text-align:center;font-size:.98rem;margin-top:8px}
+.path-box b{font-family:var(--serif);color:var(--celadon-ink);font-size:1.1rem}
+.path-box .mine{display:block;font-size:.84rem;color:var(--bad);margin-top:3px}
+
+/* ---------- 범위·기록 페이지 ---------- */
+.wide-panel{width:100%}
+.wide-panel h2{margin:0 0 6px;font-size:1.15rem;font-family:var(--serif)}
+.sub{color:var(--ink3);font-size:.86rem;margin:0 0 12px}
+.small-btn{background:var(--surface);border:1px solid var(--line);padding:6px 11px;border-radius:8px;font-weight:600;font-size:.84rem;text-decoration:none;color:var(--ink)}
+.small-btn:hover{border-color:var(--celadon)}
+.small-btn.danger{color:var(--bad)}
+.small-btn.primary{background:var(--celadon);border-color:var(--celadon);color:#fff}
+:root[data-theme="dark"] .small-btn.primary{color:#0f1513}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .small-btn.primary{color:#0f1513}}
+.small-btn:disabled{opacity:.45}
+.divider{border:0;border-top:1px dashed var(--line);margin:12px 0 16px}
+.mode-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:12px}
+.mode-card{position:relative;display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer}
+.mode-card input{position:absolute;opacity:0;pointer-events:none}
+.mode-card.selected{border-color:var(--celadon);background:var(--celadon-weak);box-shadow:0 0 0 1px var(--celadon)}
+.mode-card.selected .mc-title::after{content:" ✓";color:var(--celadon-ink)}
+.mc-title{font-weight:700;font-size:.98rem}
+.mc-desc{font-size:.8rem;color:var(--ink3);margin-top:4px}
+.mc-count{margin-top:6px;font-weight:700;color:var(--celadon-ink);font-variant-numeric:tabular-nums}
+.range-summary{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0;font-size:.9rem}
+.exclude-hint{color:var(--bad);font-size:.84rem;font-weight:600;margin:6px 0 0}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:.9rem}
+.toolbar .search-box{margin:0;flex:1 1 220px;width:auto}
+.num-input{width:72px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.rx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px;max-height:520px;overflow-y:auto;padding:2px}
+.rx-item{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 10px;cursor:pointer;user-select:none}
+.rx-item:hover{border-color:var(--celadon)}
+.rx-item input{width:18px;height:18px;accent-color:var(--bad);flex:none}
+.rx-no{font-size:.74rem;color:var(--ink3);min-width:26px;text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.rx-text{display:flex;flex-direction:column;min-width:0;flex:1}
+.rx-name{font-family:var(--serif);font-weight:700;overflow-wrap:anywhere}
+.rx-reading{font-size:.74rem;color:var(--ink3)}
+.rx-item.excluded{background:var(--sunk)}
+.rx-item.excluded .rx-name{text-decoration:line-through;color:var(--ink3)}
+.tag{font-size:.68rem;padding:1px 6px;border-radius:6px;font-weight:700;flex:none}
+.tag.ok{background:var(--ok-weak);color:var(--ok)} .tag.bad{background:var(--bad-weak);color:var(--bad)} .tag.memo{background:var(--celadon-weak);color:var(--celadon-ink)}
+.rx-star{font-size:1.1rem;cursor:pointer;color:var(--line);flex:none;padding:0 2px}
+.rx-star.on{color:var(--star)}
+.footer-actions{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
+.chapter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:6px;margin-bottom:8px}
+.chapter-item{display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px;cursor:pointer;font-size:.86rem;user-select:none}
+.chapter-item input{accent-color:var(--celadon);flex:none}
+.chapter-item small{color:var(--ink3)}
+.chapter-item.off{opacity:.5}
+
+.wrong-header{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+.wrong-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.wrong-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.wrong-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:7px}
+.wrong-card.memorized{border-left-color:var(--ok)} .wrong-card.starred-card{border-left-color:var(--star)}
+.wc-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.wc-name{font-family:var(--serif);font-weight:700;font-size:1.05rem;color:var(--celadon-ink);overflow-wrap:anywhere}
+.wc-reading{font-size:.78rem;color:var(--ink3)}
+.wc-meta{font-size:.74rem;color:var(--bad);text-align:right;white-space:nowrap;font-weight:600}
+.wrong-card.memorized .wc-meta{color:var(--ok)} .wrong-card.starred-card .wc-meta{color:var(--warn)}
+.wc-chips{display:flex;flex-wrap:wrap;gap:4px;transition:filter .2s}
+.wc-chips .chip{font-size:.8rem}
+.wc-memo{font-size:.8rem;background:var(--warn-weak);padding:5px 8px;border-radius:6px;transition:filter .2s}
+.wc-reveal-hint{display:none;font-size:.74rem;color:var(--ink3)}
+.wrong-list.hide-ings .wrong-card:not(.revealed) .wc-chips,
+.wrong-list.hide-ings .wrong-card:not(.revealed) .wc-memo{filter:blur(6px);cursor:pointer;user-select:none}
+.wrong-list.hide-ings .wrong-card:not(.revealed) .wc-reveal-hint{display:block}
+.wc-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:auto;flex-wrap:wrap}
+.empty-state{grid-column:1/-1;text-align:center;color:var(--ink3);padding:36px 10px;line-height:1.7;border:1px dashed var(--line);border-radius:var(--r)}
+.backup-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px;padding-top:12px;border-top:1px dashed var(--line);font-size:.84rem;color:var(--ink3)}
+body.hosted #exportBtn{display:none}
+.standby{padding:40px 16px;text-align:center;color:var(--ink2)}
+
+/* ---------- 작은 화면: 문제 · 넣은 약재 · 버튼 · 검색 · 결과를 한 화면에 ---------- */
+@media (max-width:820px){
+  body{padding:8px 10px 24px}
+  h1{font-size:1.25rem;margin:0 0 6px}
+  .subject-bar{margin-bottom:6px}
+  .subject-btn{padding:6px 11px;font-size:.88rem}
+  .tabs{margin-bottom:8px}
+  .tab{padding:6px 9px;font-size:.88rem}
+  .status-bar{gap:5px;margin-bottom:8px}
+  .badge{padding:4px 9px;font-size:.8rem}
+  .sel,.mode-btn{font-size:.78rem;padding:4px 7px}
+  .seg button{padding:4px 8px;font-size:.78rem}
+  .toggle{font-size:.78rem}
+  .panel{padding:12px}
+
+  /* 두 패널을 풀어 한 줄로 순서를 다시 짠다 */
+  .game-container{flex-direction:column;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 10px 12px}
+  .game-container > .panel{display:contents}
+  .ingredient-section,.pot-section{height:auto;min-height:0}
+  .pot-section > .section-title,.pot-container,.kbd-help,.search-help{display:none}
+  #potGame .target-wrap{order:1;margin:0}
+  #potGame .target-prescription{font-size:1.4rem;padding:4px 14px;margin:2px 0}
+  #potGame .target-prescription.long{font-size:1.1rem} #potGame .target-prescription.xlong{font-size:.95rem}
+  #potGame .target-no{font-size:.72rem;line-height:1.3}
+  #potGame .target-line{gap:2px}
+  #potGame .target-reading{font-size:.8rem;line-height:1.3;display:inline}
+  #potGame .hint-row{display:inline-flex;margin:0 0 0 6px;min-height:0;vertical-align:middle}
+  #potGame .hint-btn{padding:1px 8px;font-size:.74rem}
+  #potGame .hint-text{display:block;font-size:.78rem;margin-top:2px}
+  #potGame .star-btn{font-size:1.3rem}
+  #potGame .pot-caption{display:none}
+  #potGame .selected-ingredients{order:3;min-height:38px;max-height:none;margin-top:6px;padding:4px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+  #potGame .selected-card{flex:none}
+  body.typing{padding-bottom:70vh}
+  #potGame .selected-ingredients:empty::before{content:"검색해서 고른 것이 여기에 쌓여요"}
+  #potGame .btn-container{order:4;margin-top:6px;gap:5px;flex-wrap:nowrap}
+  #potGame .btn-container .action-btn{flex:1 1 auto;padding:7px 5px;font-size:.82rem;white-space:nowrap}
+  #potGame .btn-container .next-btn{flex:2 1 auto}
+  #potGame .result-area{order:5;margin-top:0}
+  #potGame .result-message:empty{min-height:0}
+  #potGame .result-message:not(:empty){margin-top:6px}
+  body.typing .ingredient-section > .section-title{display:none}
+  .ingredient-section > .section-title{order:6;margin:6px 0 4px;padding-bottom:0;border:0;font-size:.8rem;color:var(--ink3)}
+  .subj-bc .ingredient-section > .section-title,.subj-cr .ingredient-section > .section-title{display:none}
+  .search-box{order:7;margin:6px 0;font-size:16px;padding:8px 11px}
+  .ingredient-list{order:8;max-height:42vh;max-height:42dvh;min-height:120px;gap:5px}
+  .ingredient-card{padding:5px 9px;font-size:.95rem}
+  .combo-card{flex-basis:100%}
+
+  .target-prescription.herb{font-size:1.7rem}
+  .big-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .sub-grid,.easy-grid{grid-template-columns:minmax(0,1fr);gap:6px}
+  .choice-btn{padding:8px 24px 8px 10px}
+  .choice-panel .kbd-help{display:none}
+  .wrong-list{grid-template-columns:minmax(0,1fr)}
+  .rx-grid{grid-template-columns:minmax(0,1fr);max-height:60vh}
+}
+</style>
+</head>
+<body class="subj-rx play-rx">
+
+<div class="subject-bar" id="subjectBar">
+    <button class="subject-btn on" data-subject="rx">🌿 상한론 113</button>
+    <button class="subject-btn" data-subject="bc">📗 본초 분류</button>
+    <button class="subject-btn" data-subject="cr">📘 본초 총론·치법</button>
+</div>
+<h1 id="appTitle">🌿 상한론 113처방 탕전 학습 게임</h1>
+<div class="data-warning" id="dataWarning"></div>
+
+<nav class="tabs">
+    <button class="tab active" data-page="game" id="gameTab">🎯 게임</button>
+    <button class="tab" data-page="range">⚙️ 출제 범위</button>
+    <button class="tab" data-page="wrong">📖 오답 노트 <span class="count" id="wrongTabCount">0</span></button>
+    <button class="tab" data-page="memo">🧠 암기 완료 <span class="count memo" id="memoTabCount">0</span></button>
+    <button class="tab" data-page="star">⭐ 별표 <span class="count star" id="starTabCount">0</span></button>
+</nav>
+
+<div class="view-seg-bar hidden" id="viewSegBar">
+    보는 기록:
+    <span class="seg" id="viewSeg">
+        <button data-view="A" id="viewSegA">📦 A</button>
+        <button data-view="B" id="viewSegB">🔎 B</button>
+    </span>
+</div>
+
+<!-- ======================= 게임 페이지 ======================= -->
+<section class="page" id="page-game">
+    <div class="status-bar ab-only">
+        <span class="seg" id="modeSeg">
+            <button data-mode="A" id="modeSegA">📦 A</button>
+            <button data-mode="B" id="modeSegB">🔎 B</button>
+            <button data-mode="mix">🔀 섞어풀기</button>
+        </span>
+        <label class="toggle" id="easyWrap" title="B 문제를 4지선다로 냅니다"><input type="checkbox" id="easyToggle"> 쉬움 (4지선다)</label>
+        <label class="toggle hidden" id="chainWrap" title="B 문제를 풀면 그 묶음의 A 문제가 이어서 나옵니다"><input type="checkbox" id="chainToggle"> 🔗 꼬리물기</label>
+    </div>
+    <div class="status-bar">
+        <div class="badge">점수 <span id="score">0</span>/<span id="total">0</span> <span id="rate"></span></div>
+        <div class="badge" id="progressBadge"><span id="progress">-</span></div>
+        <div class="badge timer-badge" id="timerBadge">⏳ <span id="timer">60</span>초</div>
+        <select class="sel" id="rangeSelectGame" title="출제 범위 (자세한 설정은 '출제 범위' 탭)">
+            <option value="all">범위: 전체</option>
+            <option value="noMemorized">범위: 암기 완료 제외</option>
+            <option value="noMastered">범위: 맞힌 것 제외</option>
+            <option value="noExcluded">범위: 지정 제외</option>
+            <option value="onlyMemorized">범위: 암기 완료만</option>
+            <option value="onlyStarred">범위: 별표만</option>
+        </select>
+        <select class="sel" id="timerSelect" title="문제당 제한 시간"></select>
+        <button class="mode-btn" id="modeToggleBtn">🔁 오답 복습</button>
+    </div>
+
+    <!-- 약탕기 방식 (상한론 · A 문제) -->
+    <div class="game-container" id="potGame">
+        <div class="panel ingredient-section">
+            <div class="section-title with-tools">
+                <span id="shelfTitle">📦 약재 인덱스 & 검색</span>
+                <span class="seg rx-only" id="sortSeg">
+                    <button data-sort="kor">가나다순</button>
+                    <button data-sort="freq">빈출순</button>
+                </span>
+            </div>
+            <input type="search" id="searchInput" class="search-box" placeholder="🔍 약재 검색" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+            <div class="search-help">
+                <kbd>Enter</kbd> 강조된 항목 넣기 · <kbd>↑</kbd><kbd>↓</kbd> 이동 · <kbd>Esc</kbd> 검색어 지우기 ·
+                빈 칸에서 <kbd>Backspace</kbd> 마지막 항목 빼기 · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 제출
+            </div>
+            <div class="ingredient-list" id="ingredientList"></div>
+        </div>
+
+        <div class="panel pot-section">
+            <div class="section-title" id="potTitle">🎯 달여야 할 처방</div>
+            <div class="target-wrap" id="potTarget">
+                <div class="target-no" id="targetNo"></div>
+                <div class="target-line">
+                    <div class="target-prescription" id="targetPrescription">불러오는 중…</div>
+                    <button class="star-btn off" id="starBtn" title="별표 (Alt+S)">☆</button>
+                </div>
+                <div class="target-reading" id="targetReading"></div>
+                <div class="hint-row">
+                    <button class="hint-btn" id="hintBtn">💡 힌트</button>
+                    <span class="hint-text hidden" id="hintText"></span>
+                </div>
+            </div>
+            <div class="pot-container">
+                <div class="pot-rim"></div>
+                <div class="pot" id="pot"><span class="pot-label">약탕기 (여기에 드롭)</span></div>
+            </div>
+            <div class="pot-caption">🥣 넣은 것 <span id="potCount">(0)</span> — 누르면 빠짐</div>
+            <div class="selected-ingredients" id="selectedIngredients"></div>
+            <div class="btn-container">
+                <button class="action-btn" id="submitBtn">제출</button>
+                <button class="action-btn reset-btn" id="resetBtn">비우기</button>
+                <button class="action-btn giveup-btn" id="giveUpBtn">모르겠어요</button>
+                <button class="action-btn memo-btn" id="memoBtn" title="이미 외운 문제: 암기 완료로 옮기고 넘깁니다 ('전체'·'암기 완료만' 범위에서만 다시 출제)">🧠 암기</button>
+                <button class="action-btn next-btn hidden" id="nextBtn">다음 ▶</button>
+            </div>
+            <div class="result-area">
+                <div class="result-message" id="resultMessage"></div>
+                <div id="feedback"></div>
+            </div>
+            <div class="kbd-help"><kbd>Ctrl</kbd>(<kbd>⌘</kbd>)+<kbd>Enter</kbd> 제출 · 채점 후 <kbd>Enter</kbd> 다음 문제 · <kbd>Alt</kbd>+<kbd>S</kbd> 별표 · 아무 글자나 치면 검색창으로 이동</div>
+        </div>
+    </div>
+
+    <!-- 고르기 방식 (B 문제) -->
+    <div class="choice-container hidden" id="choiceGame">
+        <div class="panel choice-panel">
+            <div class="section-title" id="choiceTitle">🎯 이 약물은 어느 분류일까요?</div>
+            <div class="target-wrap">
+                <div class="target-no" id="bNo"></div>
+                <div class="target-line">
+                    <div class="target-prescription herb" id="bTarget"></div>
+                    <button class="star-btn off" id="bStarBtn" title="별표 (Alt+S)">☆</button>
+                </div>
+                <div class="target-reading" id="bReading"></div>
+                <div class="target-alias" id="bAlias"></div>
+                <div class="hint-row">
+                    <button class="hint-btn" id="bHintBtn">💡 힌트</button>
+                    <span class="hint-text hidden" id="bHintText"></span>
+                </div>
+            </div>
+            <div class="choice-box" id="choiceBox"></div>
+            <div class="btn-container">
+                <button class="action-btn giveup-btn" id="bGiveUpBtn">모르겠어요</button>
+                <button class="action-btn memo-btn" id="bMemoBtn" title="이미 외운 문제: 암기 완료로 옮기고 넘깁니다">🧠 암기</button>
+                <button class="action-btn next-btn hidden" id="bNextBtn">다음 ▶</button>
+            </div>
+            <div class="result-area">
+                <div class="result-message" id="bResult"></div>
+                <div id="bFeedback"></div>
+            </div>
+            <div class="kbd-help">숫자키 <kbd>1</kbd>~<kbd>9</kbd> 고르기 · <kbd>Enter</kbd> 제출·다음 문제 · <kbd>Esc</kbd> 대분류로 돌아가기 · <kbd>Alt</kbd>+<kbd>S</kbd> 별표</div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================= 출제 범위 설정 ======================= -->
+<section class="page hidden" id="page-range">
+    <div class="panel wide-panel">
+        <div class="ab-only">
+            <h2>📚 <span id="chapterWord">대분류</span> 범위</h2>
+            <p class="sub">체크한 것에서만 출제합니다. A·B·섞어풀기와 아래 모든 범위에 함께 적용됩니다. 현재 <b id="chapterCount">0</b> / <span id="chapterTotal">0</span></p>
+            <div class="toolbar">
+                <button class="small-btn" id="chapAllBtn">모두 선택</button>
+                <button class="small-btn" id="chapNoneBtn">모두 해제</button>
+            </div>
+            <div class="chapter-grid" id="chapterGrid"></div>
+            <hr class="divider">
+        </div>
+
+        <h2>⚙️ 출제 범위</h2>
+        <p class="sub">일반 모드에서 어떤 <span class="u">처방</span>을 낼지 고릅니다. 오답 복습 모드는 범위와 관계없이 오답 노트 전체에서 출제됩니다.<span class="ab-only"> 범위는 A·B에 함께 적용되고, 개수는 위에서 고른 '보는 기록' 기준입니다.</span></p>
+
+        <div class="mode-cards">
+            <label class="mode-card" data-mode="all"><input type="radio" name="rangeMode" value="all">
+                <div class="mc-title">📚 전체</div><div class="mc-desc">암기 완료까지 모두 출제합니다.</div>
+                <div class="mc-count"><span id="cnt-all">0</span>개 출제</div></label>
+            <label class="mode-card" data-mode="noMemorized"><input type="radio" name="rangeMode" value="noMemorized">
+                <div class="mc-title">🧠 암기 완료 제외</div><div class="mc-desc">암기 완료로 옮긴 것만 빼고 모두 출제합니다.</div>
+                <div class="mc-count"><span id="cnt-noMemorized">0</span>개 출제</div></label>
+            <label class="mode-card" data-mode="noMastered"><input type="radio" name="rangeMode" value="noMastered">
+                <div class="mc-title">✅ 맞힌 것 제외</div><div class="mc-desc">한 번이라도 맞힌 것과 암기 완료는 빼고 출제합니다. 다시 틀리면 돌아옵니다.</div>
+                <div class="mc-count"><span id="cnt-noMastered">0</span>개 출제</div></label>
+            <label class="mode-card" data-mode="noExcluded"><input type="radio" name="rangeMode" value="noExcluded">
+                <div class="mc-title">🚫 지정한 <span class="u">처방</span> 제외</div><div class="mc-desc">아래 목록에서 체크한 것과 암기 완료는 빼고 출제합니다.</div>
+                <div class="mc-count"><span id="cnt-noExcluded">0</span>개 출제</div></label>
+            <label class="mode-card" data-mode="onlyMemorized"><input type="radio" name="rangeMode" value="onlyMemorized">
+                <div class="mc-title">🧠 암기 완료만</div><div class="mc-desc">암기 완료로 옮긴 것만 출제합니다. 외운 게 맞는지 점검할 때.</div>
+                <div class="mc-count"><span id="cnt-onlyMemorized">0</span>개 출제</div></label>
+            <label class="mode-card" data-mode="onlyStarred"><input type="radio" name="rangeMode" value="onlyStarred">
+                <div class="mc-title">⭐ 별표만</div><div class="mc-desc">별표한 것만 출제합니다. (암기 완료는 제외)</div>
+                <div class="mc-count"><span id="cnt-onlyStarred">0</span>개 출제</div></label>
+        </div>
+
+        <div class="range-summary">
+            <span class="badge">맞힌 <span class="u">처방</span> <span id="masteredCount">0</span>개</span>
+            <button class="small-btn danger" id="resetMasteredBtn">맞힌 기록 초기화</button>
+            <span class="badge">🧠 암기 완료 <span id="memoCountRange">0</span>개</span>
+            <a class="small-btn" href="#memo">암기 완료 목록</a>
+        </div>
+        <hr class="divider">
+
+        <h2>🚫 제외할 <span class="u">처방</span> 지정</h2>
+        <p class="sub">체크한 것은 '지정 제외' 범위에서 출제되지 않습니다. 현재 <b id="excludedCount">0</b>개 제외 / <span class="uTotal">113</span></p>
+        <p class="exclude-hint hidden" id="excludeHint">⚠️ 지금 범위가 '지정 제외'가 아니라서 체크한 것도 출제됩니다. 위에서 범위를 바꿔주세요.</p>
+        <div class="toolbar">
+            <input class="search-box" id="rxSearch" placeholder="🔍 검색 (이름, 독음, 초성, 번호)" autocomplete="off">
+            <button class="small-btn" id="excludeVisibleBtn">보이는 것 모두 제외</button>
+            <button class="small-btn" id="includeVisibleBtn">보이는 것 모두 포함</button>
+        </div>
+        <div class="toolbar">
+            번호 <input type="number" class="num-input" id="numFrom" min="1" value="1"> ~ <input type="number" class="num-input" id="numTo" min="1" value="113">
+            <button class="small-btn" id="excludeRangeBtn">이 번호 제외</button>
+            <button class="small-btn" id="includeRangeBtn">이 번호 포함</button>
+            <button class="small-btn" id="excludeMasteredBtn">맞힌 것 모두 체크</button>
+        </div>
+        <div class="rx-grid" id="rxGrid"></div>
+        <div class="footer-actions">
+            <span class="sub" style="margin:0">설정은 자동 저장됩니다.</span>
+            <button class="action-btn" id="startFromRangeBtn">이 범위로 게임 시작 ▶</button>
+        </div>
+    </div>
+</section>
+
+<!-- ======================= 오답 노트 ======================= -->
+<section class="page hidden" id="page-wrong">
+    <div class="panel wide-panel">
+        <div class="wrong-header">
+            <div><h2>📖 오답 노트</h2><p class="sub" id="wrongSummary" style="margin:0"></p></div>
+            <div class="wrong-controls">
+                <select class="sel" id="wrongSort"><option value="no">번호순</option><option value="count">많이 틀린 순</option><option value="recent">최근 틀린 순</option></select>
+                <label class="toggle"><input type="checkbox" id="hideIngs"> 정답 가리기</label>
+                <button class="small-btn primary" id="startReviewBtn">🔁 오답만 풀기</button>
+                <button class="small-btn danger" id="clearWrongBtn">전체 비우기</button>
+            </div>
+        </div>
+        <div class="wrong-list" id="wrongList"></div>
+    </div>
+</section>
+
+<!-- ======================= 별표 ======================= -->
+<section class="page hidden" id="page-star">
+    <div class="panel wide-panel">
+        <div class="wrong-header">
+            <div><h2>⭐ 별표</h2><p class="sub" id="starSummary" style="margin:0"></p></div>
+            <div class="wrong-controls">
+                <input class="search-box" id="starSearch" placeholder="🔍 검색" autocomplete="off" style="width:160px;margin:0">
+                <select class="sel" id="starSort"><option value="no">번호순</option><option value="recent">최근 별표순</option></select>
+                <label class="toggle"><input type="checkbox" id="starHide"> 정답 가리기</label>
+                <button class="small-btn primary" id="playStarBtn">⭐ 별표만 풀기</button>
+                <button class="small-btn danger" id="clearStarBtn">별표 모두 해제</button>
+            </div>
+        </div>
+        <p class="sub">게임 화면의 ☆(<kbd>Alt</kbd>+<kbd>S</kbd>)나 기록 목록의 ☆로 별표한 <span class="u">처방</span>입니다. '별표만' 범위로 집중해서 풀 수 있습니다.</p>
+        <div class="wrong-list" id="starList"></div>
+    </div>
+</section>
+
+<!-- ======================= 암기 완료 ======================= -->
+<section class="page hidden" id="page-memo">
+    <div class="panel wide-panel">
+        <div class="wrong-header">
+            <div><h2>🧠 암기 완료</h2><p class="sub" id="memoSummary" style="margin:0"></p></div>
+            <div class="wrong-controls">
+                <input class="search-box" id="memoSearch" placeholder="🔍 검색" autocomplete="off" style="width:160px;margin:0">
+                <select class="sel" id="memoSort"><option value="no">번호순</option><option value="recent">최근 등록순</option></select>
+                <label class="toggle"><input type="checkbox" id="memoHide"> 정답 가리기</label>
+                <button class="small-btn primary" id="playMemoBtn">🧠 암기 완료만 풀기</button>
+                <button class="small-btn danger" id="clearMemoBtn">전체 되돌리기</button>
+            </div>
+        </div>
+        <p class="sub">게임 중 <b>🧠 암기</b> 버튼으로 넘긴 <span class="u">처방</span>입니다. 범위가 <b>'전체'</b> 또는 <b>'암기 완료만'</b>일 때만 출제됩니다. <b>되돌리기</b>를 누르면 다시 출제 대상이 됩니다.</p>
+        <div class="wrong-list" id="memoList"></div>
+        <div class="backup-row">
+            <span id="backupText">💾 학습 기록은 이 브라우저에 저장됩니다. 다른 기기로 옮기거나 백업하려면:</span>
+            <button class="small-btn" id="exportBtn">백업 파일 저장</button>
+            <button class="small-btn" id="importBtn">백업 불러오기</button>
+            <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+        </div>
+    </div>
+</section>
+
+<script>
+/* 앱(index.html) 안에서 열리면: 앱에게 데이터와 기록을 받은 뒤 game.js를 불러온다. */
+(function () {
+  if (window.GAME_DATA) return;
+  if (window.parent === window) {
+    document.body.innerHTML = '<div class="standby">한의학 문제은행 앱의 <b>탕전 게임</b> 메뉴에서 열어 주세요.</div>';
+    return;
+  }
+  window.addEventListener("message", function onMsg(e) {
+    if (e.origin !== location.origin || e.source !== window.parent) return;
+    var m = e.data || {};
+    if (m.type !== "hanui-game:init") return;
+    window.removeEventListener("message", onMsg);
+    window.GAME_DATA = m.data;
+    window.GAME_HOST = { state: m.state || {}, theme: m.theme || "", post: function (x) { window.parent.postMessage(x, location.origin); } };
+    var s = document.createElement("script");
+    s.src = "game.js?v=" + (m.ver || "");
+    document.body.appendChild(s);
+  });
+  window.parent.postMessage({ type: "hanui-game:ready" }, location.origin);
+})();
+</script>
+</body>
+</html>

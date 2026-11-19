@@ -46,6 +46,8 @@ function mergeState(remote){
   const newest = (a, b, f) => { const o = Object.assign({}, a||{}); for (const [k,v] of Object.entries(b||{})){ if (!o[k] || f(v) >= f(o[k])) o[k] = v; } return o; };
   out.decks = newest(remote.decks, S.decks, d => d.u||0); out.deckMeta = newest(remote.deckMeta, S.deckMeta, d => d.u||0);
   out.folders = newest(remote.folders, S.folders, d => d.u||0); out.cards = newest(remote.cards, S.cards, c => c.t||0);
+  /* 탕전 게임: 키(상한론·본초·총론 기록과 설정)마다 마지막에 고친 쪽(u) */
+  out.game = {}; [remote.game||{}, S.game||{}].forEach(src => { for (const [k,e] of Object.entries(src)){ if (e && (!out.game[k] || (e.u||0) >= (out.game[k].u||0))) out.game[k] = e; } });
   out.routine = {}; [remote.routine||{}, S.routine||{}].forEach((src,li) => { for (const [d,r] of Object.entries(src)){ const o = out.routine[d] || (out.routine[d] = { a:{}, m:{} }); Object.assign(o.a, r.a||{}); if (li===1 || !Object.keys(o.m).length) o.m = Object.assign({}, r.m||{}); } });
   return out;
 }
@@ -64,6 +66,7 @@ function pullCloud(){
       dbDoc = { set: o => hooks.saveState(o) };
       const typing = document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName);
       applyRemote(remote);
+      gamePush();
       setSync('cloud'); persist();
       if (!typing) render(); else renderChrome();
     } catch(e){
@@ -112,7 +115,7 @@ const chName = n => (CH.find(c => c.n===n)||{}).name || '';
 /* ---------------- routing ---------------- */
 let view = 'home', session = null;
 function go(v){ view = v; if (v !== 'quiz' && v !== 'result') session = session && session.done ? session : session; render(); window.scrollTo(0,0); }
-const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습'],['cards','카드'],['notes','복습 노트'],['stats','기록']];
+const NAV = [['home','홈'],['setup','문제 풀기'],['jy','집요 복습'],['sl','생리학 복습'],['zg','총강 복습'],['cards','카드'],['game','탕전 게임'],['notes','복습 노트'],['stats','기록']];
 function navHTML(cur){
   const wrong = ITEMS.filter(i => isActiveWrong(i.id)).length, bm = Object.keys(S.bm).length;
   return NAV.map(([k,l]) => `<button type="button" data-go="${k}" aria-current="${cur===k||(cur==='quiz'&&k==='setup')||(cur==='result'&&k==='setup')||(String(cur).startsWith('jy')&&k===(typeof JG!=='undefined'?JG:'jy'))}">${l}${k==='notes'?`<span class="cnt">${wrong} · ★${bm}</span>`:''}${k==='cards'&&CARDS?(n => n?`<span class="cnt">${n}</span>`:'')(CARDS.dueCount()):''}</button>`).join('');
@@ -145,6 +148,8 @@ function render(){
   rvBackfill();
   renderChrome();
   const v = $('#view');
+  gameShow(view==='game');
+  if (view==='game') { v.innerHTML = ''; return; }
   if (view==='home') v.innerHTML = homeHTML();
   else if (view==='setup') v.innerHTML = setupHTML();
   else if (view==='quiz') renderQuiz();
@@ -654,7 +659,7 @@ function act(a, el){
       break; }
   }
 }
-function applyTheme(){ const t = S.prefs.theme; if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
+function applyTheme(){ const t = S.prefs.theme; if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); gamePost({ type:'hanui-game:theme', theme: t||'' }); }
 
 /* ================= 집요 복습 (빈칸 노트) ================= */
 const JI = JD.items, JBY = {}; JI.forEach(i => JBY[i.id] = i);
@@ -1469,13 +1474,52 @@ function rvBind(){
   v.querySelectorAll('[data-jmemo]').forEach(t => t.oninput = () => { const id = t.dataset.jmemo; if (t.value.trim()) S.memo[id] = t.value; else delete S.memo[id]; persist(); });
 }
 
+/* ---------------- 탕전 게임 (game.html을 iframe으로 띄우고, 데이터·기록을 주고받음) ---------------- */
+/* 게임 데이터 = hanui_content의 'game' 행(boot.js가 hooks.gameData로 넘김). 기록 = S.game { 키: {u, v} } */
+var gameFrame = null, gameHost = null;   // var: render()가 먼저 불려도 안전하게
+function gamePost(msg){ try { if (gameFrame && gameFrame.contentWindow) gameFrame.contentWindow.postMessage(msg, location.origin); } catch(e){} }
+function gamePush(){ gamePost({ type:'hanui-game:state', state: S.game || {} }); }
+function gameSize(){
+  if (!gameHost || gameHost.hidden) return;
+  const top = gameHost.getBoundingClientRect().top + window.scrollY;
+  gameHost.style.height = Math.max(320, Math.round(window.innerHeight - top)) + 'px';
+}
+function gameShow(on){
+  document.querySelector('.app').classList.toggle('game-on', !!on);
+  if (!on){ if (gameHost) gameHost.hidden = true; return; }
+  if (!gameHost){
+    gameHost = document.createElement('div');
+    gameHost.id = 'gameHost';
+    gameHost.className = 'game-host';
+    gameFrame = document.createElement('iframe');
+    gameFrame.title = '탕전 학습 게임';
+    gameFrame.src = 'game.html';
+    gameHost.appendChild(gameFrame);
+    $('main').appendChild(gameHost);
+  }
+  gameHost.hidden = false;
+  requestAnimationFrame(gameSize);
+}
+window.addEventListener('resize', gameSize);
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !gameFrame || e.source !== gameFrame.contentWindow) return;
+  const m = e.data || {};
+  if (m.type === 'hanui-game:ready'){
+    gamePost({ type:'hanui-game:init', data: hooks.gameData || null, state: S.game || {}, theme: S.prefs.theme || '', ver: hooks.gameVer || '' });
+  } else if (m.type === 'hanui-game:save' && m.changes){
+    S.game = S.game || {};
+    for (const [k, c] of Object.entries(m.changes)){ if (c && (!S.game[k] || (c.u||0) >= (S.game[k].u||0))) S.game[k] = c; }
+    persist();
+  }
+});
+
 /* 카드 탭 (cards.js) */
 var CARDS = window.HanuiCards ? window.HanuiCards({ getS: () => S, persist, toast, esc, shuffle, go: v => go(v), rerender: () => render(), isActive: () => view==='cards' }) : null;
 applyTheme();
 render();
 /* 다른 곳에서 가져온 기록(예: 예전 Claude 아티팩트)을 지금 기록과 합친다 */
 function importState(obj){
-  const m = mergeState(obj); Object.assign(P, m.prefs); m.prefs = P; S = m; applyTheme(); persist(); render();
+  const m = mergeState(obj); Object.assign(P, m.prefs); m.prefs = P; S = m; applyTheme(); gamePush(); persist(); render();
 }
 return { importState, exportState: () => JSON.parse(JSON.stringify(S)), render };
 };

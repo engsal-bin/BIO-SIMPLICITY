@@ -43,6 +43,9 @@ if (!GD || !GD.RX_RAW) {
 }
 const { ingredientDB, RX_RAW, BC_BIG, BC_GROUPS, BC_ALIASES, BC_ALIAS_READING, RX_TO_BC, RX_TO_BC_NOTE } = GD;
 const CR = GD.CR || { units: [], topics: [], terms: {}, toBc: {} };
+const DD = GD.DD || { rx: {}, bc: {} };   // 덩달이(암기 문장)
+const ddPlain = t => String(t || "").replace(/\*\*/g, "");
+const ddHtml = t => esc(t || "").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
 
 // =====================================================================
 //  상한론 113 데이터 가공
@@ -70,6 +73,7 @@ const READING = Object.fromEntries(ingredientDB.map(i => [i.hanja, i.reading]));
 
 const prescriptions = RX_RAW.map(([name, reading, ings, memo, alias], idx) => ({
     mode: "rx", no: idx + 1, name, label: name, reading, ings: ings.split(/\s+/), memo: memo || "", alias: alias || "",
+    dd: DD.rx[nfc(name)] || DD.rx[name] || "",
     cho: choseong(reading), chapter: 0
 }));
 prescriptions.forEach(p => { p.keys = [norm(p.name), p.reading, norm(p.alias)].filter(Boolean); p.chos = [p.cho]; });
@@ -108,7 +112,7 @@ const bcGroups = BC_GROUPS.map(([code, name, reading, desc, list], idx) => {
     const big = BIG_BY_NO[chapter];
     const g = {
         mode: "bcA", no: idx + 1, code, name: nfc(name), label: nfc(name), reading, desc, memo: desc, big, chapter,
-        alias: "", cho: choseong(reading), ings: []
+        alias: "", cho: choseong(reading), ings: [], dd: DD.bc[code] || null
     };
     list.split(/\s+/).forEach(tok => {
         const [raw, r] = tok.split(":");
@@ -332,7 +336,7 @@ function parseRecords(s, m) {
     const wrong = {};
     if (s.wrong && typeof s.wrong === "object") {
         for (const [n, v] of Object.entries(s.wrong)) {
-            if (byName[n]) wrong[n] = { count: Number(v && v.count) || 1, last: Number(v && v.last) || 0 };
+            if (byName[n]) wrong[n] = Object.assign({ count: Number(v && v.count) || 1, last: Number(v && v.last) || 0 }, v && v.hint ? { hint: 1 } : {});
         }
     }
     const rec = {
@@ -484,6 +488,7 @@ let chainNext = null;
 let isChainQ = false;
 let selectedInPot = [];
 let answered = false;
+let hinted = false;   // 이번 문제에서 힌트를 봤는지 (봤으면 맞혀도 맞힌 것으로 치지 않음)
 let isReviewMode = false;
 let timeLeft = 0, curLimit = 0;
 let timerInterval = null, advanceTimeout = null;
@@ -788,6 +793,7 @@ function nextQuestion(extraNotice = "") {
 
     current = next;
     answered = false;
+    hinted = false;
     selectedInPot = [];
     bStep = "big"; bBig = 0; bPicked = null; bSel = [];
     bOptions = (current.mode === "bcB" && SS.bc.easy) ? makeOptions(current) : [];
@@ -908,20 +914,26 @@ function renderQuestion() {
     renderStarBtn();
 }
 
+const HINT_NOTE = '<span class="hint-note">힌트를 봐서 맞혀도 다시 나와요</span>';
 function showHint() {
     if (!current) return;
+    if (!answered) hinted = true;
     if (kindOf(current) === "pot") {
         let txt;
-        if (current.mode === "rx") txt = `약재 ${current.ings.length}가지` + (current.memo ? ` · 암기법: ${current.memo}` : "");
-        else if (current.mode === "bcA") txt = `약물 ${current.ings.length}가지 · ${current.desc}`;
-        else txt = `${current.ings.length}개` + (current.memo ? ` · ${current.memo}` : "") + (current.topic.memo ? ` · ${current.topic.memo}` : "");
-        $("hintText").textContent = txt;
+        if (current.mode === "rx") {
+            txt = esc(`약재 ${current.ings.length}가지`) +
+                (current.dd ? ` · 🗣 ${ddHtml(current.dd)}` : "") +
+                (current.memo && ddPlain(current.dd) !== current.memo ? ` · 암기법: ${esc(current.memo)}` : "");
+        } else if (current.mode === "bcA") {
+            txt = esc(`약물 ${current.ings.length}가지`) + (current.dd ? ` · 🗣 ${ddHtml(current.dd.t)}` : "") + ` · ${esc(current.desc)}`;
+        } else txt = esc(`${current.ings.length}개` + (current.memo ? ` · ${current.memo}` : "") + (current.topic.memo ? ` · ${current.topic.memo}` : ""));
+        $("hintText").innerHTML = txt + HINT_NOTE;
         $("hintText").classList.remove("hidden");
         $("hintBtn").classList.add("hidden");
     } else {
-        $("bHintText").textContent = current.mode === "bcB"
+        $("bHintText").innerHTML = esc(current.mode === "bcB"
             ? `대분류: ${current.group.big.name} (${current.group.big.reading})`
-            : (current.topic.memo || `정답 ${current.answers.length}개`);
+            : (current.topic.memo || `정답 ${current.answers.length}개`)) + HINT_NOTE;
         $("bHintText").classList.remove("hidden");
         $("bHintBtn").classList.add("hidden");
     }
@@ -973,10 +985,17 @@ function finishQuestion(forcedWrong, label, picked = null) {
         isCorrect = !forcedWrong && p.size === current.answers.length && current.answers.every(i => p.has(i));
     }
 
-    if (isCorrect) {
+    const hintOk = isCorrect && hinted;
+    if (isCorrect && !hinted) {
         s.score++;
         st.mastered.add(current.name);
         delete st.wrong[current.name];
+    } else if (hintOk) {
+        // 힌트를 보고 맞힘 → 맞힌 것으로 치지 않음: 오답 노트에 남기고 잠시 뒤 다시 출제
+        st.mastered.delete(current.name);
+        const prev = st.wrong[current.name];
+        st.wrong[current.name] = { count: (prev ? prev.count : 0) + 1, last: Date.now(), hint: 1 };
+        requeueCurrent();
     } else {
         st.mastered.delete(current.name);
         const prev = st.wrong[current.name];
@@ -989,6 +1008,11 @@ function finishQuestion(forcedWrong, label, picked = null) {
     if (pot) renderPotFeedback(isCorrect, label, hit, userSet);
     else if (current.mode === "bcB") renderChoiceFeedback(isCorrect, label, picked);
     else renderMultiFeedback(isCorrect, label, picked || []);
+    if (hintOk) {
+        const m = $(pot ? "resultMessage" : "bResult");
+        m.className = "result-message notice";
+        m.textContent = "⭕ 맞혔어요! 다만 힌트를 봐서 맞힌 것으로 치지 않고, 조금 뒤에 다시 나와요.";
+    }
 
     // 꼬리물기: 섞어풀기에서 B 문제를 풀면 그 묶음의 A 문제로 이어짐
     if (isMixMode(playMode) && SSof(playMode).chain && !isReviewMode) {
@@ -998,7 +1022,32 @@ function finishQuestion(forcedWrong, label, picked = null) {
 
     if (!pot) $("bNextBtn").focus({ preventScroll: true });
     else focusSearch();
-    if (isCorrect) advanceTimeout = setTimeout(nextQuestion, pot ? 1800 : 1300);
+    if (isCorrect && !hinted) advanceTimeout = setTimeout(nextQuestion, pot ? 1800 : 1300);
+}
+
+// 힌트를 보고 맞힌 문제를 지금 덱의 몇 문제 뒤에 다시 넣는다
+function requeueCurrent() {
+    if (!current || !currentFromDeck || isReviewMode) return;
+    const s = S();
+    let dk = "deck", pk = "pos";
+    if (isMixMode(playMode)) [dk, pk] = isA(current.mode) ? ["deckA", "posA"] : ["deckB", "posB"];
+    if (!Array.isArray(s[dk])) return;
+    const at = Math.min(s[pk] + 4, s[dk].length);
+    s[dk].splice(at, 0, current);
+}
+
+// 덩달이 상자: 문장 + (본초 분류면) 덩달이 순서대로 약물
+function ddBoxHtml(item) {
+    if (!item) return "";
+    if (item.mode === "rx") return item.dd ? `<div class="memo-box dd-box">🗣 덩달이: ${ddHtml(item.dd)}</div>` : "";
+    const d = item.dd;
+    if (!d) return "";
+    const order = d.h.map(h => h[0] === "?"
+        ? `<span class="dd-o miss">${esc(h.slice(1))}</span>`
+        : `<span class="dd-o">${esc(h)} <em>${esc((HERB[h] || {}).reading || "")}</em></span>`).join('<span class="dd-arrow">›</span>');
+    const left = item.ings.filter(h => !d.h.includes(h));
+    return `<div class="memo-box dd-box">🗣 덩달이: ${ddHtml(d.t)}<div class="dd-order">${order}</div>` +
+        (left.length ? `<div class="legend">덩달이에 없는 약물: ${left.map(esc).join(", ")}</div>` : "") + `</div>`;
 }
 
 function chipHtml(h, cls) {
@@ -1042,11 +1091,13 @@ function renderPotFeedback(isCorrect, label, hit, userSet) {
     if (!isCorrect) html += '<div class="legend">초록: 맞힘 · 빨간 점선: 빠뜨림 · 회색 취소선: 불필요</div>';
     if (current.mode === "rx") {
         html += '<div class="legend">파란 꼬리표: 본초 분류</div>';
-        if (current.memo) html += `<div class="memo-box">💡 암기법: ${esc(current.memo)}</div>`;
+        html += ddBoxHtml(current);
+        if (current.memo && ddPlain(current.dd) !== current.memo) html += `<div class="memo-box">💡 암기법: ${esc(current.memo)}</div>`;
         const same = compGroups[compKey(current)].filter(n => n !== current.name);
         if (same.length) html += `<div class="same-box">🔁 구성 약재가 같은 처방 (용량·법제 차이): ${same.join(", ")}</div>`;
     } else if (current.mode === "bcA") {
         html += `<div class="memo-box">📝 ${current.big.name} › ${current.name}: ${esc(current.desc)}</div>`;
+        html += ddBoxHtml(current);
     } else {
         const memo = [current.memo, current.topic.memo].filter(Boolean).join(" · ");
         if (memo) html += `<div class="memo-box">💡 ${esc(memo)}</div>`;
@@ -1235,6 +1286,7 @@ function renderChoiceFeedback(isCorrect, label, picked) {
                (herb.showAliases.length ? ` <span class="alias">=${herb.showAliases.join("·")}</span>` : "") + `</span>`;
     }).join("") + "</div>";
     html += `<div class="legend">${g.name}의 약물 ${g.ings.length}가지 · 노란색이 이번 문제</div>`;
+    html += ddBoxHtml(g);
     const rx = HERB_TO_RX[current.name];
     if (rx && rx.length) {
         const shown = rx.slice(0, 6).map(x => x.rx + (x.as !== current.name ? `(${x.as})` : "")).join(", ");
@@ -1654,11 +1706,11 @@ function buildRxCard(p, { extraClass = "", meta = "", actions = [], onStar = nul
     if (m === "rx") {
         sub = `${p.reading}${p.alias ? " · 이명 " + p.alias : ""} · 약재 ${p.ings.length}가지`;
         chips = p.ings.map(h => chipOf(h, READING[h])).join("");
-        memo = p.memo;
+        memo = [p.dd ? "🗣 " + ddPlain(p.dd) : "", p.memo && p.memo !== ddPlain(p.dd) ? p.memo : ""].filter(Boolean).join(" · ");
     } else if (m === "bcA") {
         sub = `${p.reading} · ${p.big.name} · 약물 ${p.ings.length}가지`;
         chips = p.ings.map(h => chipOf(h, HERB[h].reading)).join("");
-        memo = p.desc; icon = "📝";
+        memo = p.desc + (p.dd ? " · 🗣 " + ddPlain(p.dd.t) : ""); icon = "📝";
     } else if (m === "bcB") {
         sub = `${p.reading}${p.alias ? " · 異名 " + p.alias : ""}`;
         chips = `<span class="chip">${p.group.big.name} › ${p.group.name} <em>${p.group.reading}</em></span>`;
@@ -1710,7 +1762,7 @@ function renderWrongPage() {
         return;
     }
     const totalWrong = names.reduce((s, n) => s + st.wrong[n].count, 0);
-    $("wrongSummary").textContent = `틀린 ${MODES[m].unit} ${names.length}개 · 누적 오답 ${totalWrong}회 · 다시 맞히면 자동으로 빠집니다`;
+    $("wrongSummary").textContent = `틀린 ${MODES[m].unit} ${names.length}개 · 누적 오답 ${totalWrong}회 · 힌트 없이 다시 맞히면 자동으로 빠집니다`;
     const sort = $("wrongSort").value;
     names.sort((a, b) => {
         const A = st.wrong[a], B = st.wrong[b];
@@ -1722,7 +1774,7 @@ function renderWrongPage() {
     names.forEach(n => {
         const w = st.wrong[n];
         listEl.appendChild(buildRxCard(byName[n], {
-            meta: `❌ ${w.count}회<br>${fmtDate(w.last)}`,
+            meta: `❌ ${w.count}회${w.hint ? "<br>💡 힌트 보고 맞힘" : ""}<br>${fmtDate(w.last)}`,
             actions: [
                 { label: "다시 풀기", cls: "primary", fn: () => askSpecific(n, m) },
                 { label: "🧠 암기 완료", fn: () => { setMemorizedFromPage(n, true, m); renderWrongPage(); } },

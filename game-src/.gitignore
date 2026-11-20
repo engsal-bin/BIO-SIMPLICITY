@@ -7,3 +7,5 @@ charmap_derived.json
 out/
 shots/
 *.sql
+dd_rx.txt
+dd_bc.txt

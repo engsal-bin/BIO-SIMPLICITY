@@ -52,8 +52,32 @@ units.forEach(u => u.topics.forEach(t => {
     t.groups.forEach(g => g.items.forEach(termInfo));
 }));
 
-const GAME_DATA = { v: 1, ...D, CR };
-const out = "out";  // 빌드 결과. 앱에 넣을 때는 out/hanui/game.* 를 ../hanui/ 로 복사
+// 덩달이(암기 문장): dd_rx.txt(처방), dd_bc.txt(본초 분류). 없으면 건너뜀
+const DD = { rx: {}, bc: {} };
+const ddLines = f => fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#")) : [];
+const rxNames = new Set(D.RX_RAW.map(r => N(r[0])));
+ddLines("dd_rx.txt").forEach(l => {
+    const i = l.indexOf("|"), name = N(l.slice(0, i).trim()), t = l.slice(i + 1).trim();
+    if (!rxNames.has(name)) throw new Error("덩달이: 상한론에 없는 처방 " + name);
+    DD.rx[name] = t;
+});
+const ddWarn = [];
+ddLines("dd_bc.txt").forEach(l => {
+    const [code, t, list] = l.split("|").map(x => x.trim());
+    const g = D.BC_GROUPS.find(x => String(x[0]) === code);
+    if (!g) throw new Error("덩달이: 없는 본초 분류 " + code);
+    const byR = {};
+    g[4].split(" ").forEach(x => { const [h, r] = x.split(":"); byR[r] = N(h); });
+    const order = (list || "").split(/\s+/).filter(Boolean).map(r => byR[r] || "?" + r);
+    const miss = Object.values(byR).filter(h => !order.includes(h));
+    order.filter(x => x[0] === "?").forEach(x => ddWarn.push(`${code} ${g[1]}: '${x.slice(1)}'는 이 분류에 없음`));
+    miss.forEach(h => ddWarn.push(`${code} ${g[1]}: ${h}가 덩달이 목록에 없음`));
+    DD.bc[code] = { t, h: order };
+});
+if (ddWarn.length) console.log("덩달이 확인:\n  " + ddWarn.join("\n  "));
+
+const GAME_DATA = { v: 1, ...D, CR, DD };
+const out = "out";
 fs.mkdirSync(path.join(out, "hanui"), { recursive: true });
 const json = JSON.stringify(GAME_DATA);
 fs.writeFileSync(path.join(out, "game_data.json"), json);
@@ -90,5 +114,6 @@ fs.writeFileSync(path.join(out, "shanghan113_game.html"), standalone);
 
 const nA = CR.topics.reduce((s, t) => s + t.groups.length, 0);
 const nB = CR.topics.reduce((s, t) => s + new Set(t.groups.flatMap(g => g.items)).size, 0);
+console.log(`덩달이: 처방 ${Object.keys(DD.rx).length} · 본초 분류 ${Object.keys(DD.bc).length}`);
 console.log(`총론: 단원 ${CR.units.length} · 주제 ${CR.topics.length} · A ${nA} · B ${nB} · 항목 ${Object.keys(terms).length}`);
 console.log(`game_data.json ${json.length} bytes · standalone ${standalone.length} bytes`);

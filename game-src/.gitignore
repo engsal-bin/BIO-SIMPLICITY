@@ -1,0 +1,9 @@
+# 데이터는 저장소에 올리지 않는다 (Supabase hanui_content 'game' 행 · 프로젝트 묶음 파일에만)
+data_rx.js
+data_bc.js
+cr_source.txt
+cr_parsed.json
+charmap_derived.json
+out/
+shots/
+*.sql

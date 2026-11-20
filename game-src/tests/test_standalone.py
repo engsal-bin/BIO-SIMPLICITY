@@ -2,9 +2,8 @@
 import sys, json
 from playwright.sync_api import sync_playwright
 
-import os
-URL = "file://" + os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "shanghan113_game.html")
-SHOTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shots") + "/"
+URL = "file:///home/claude/gamebuild/out/shanghan113_game.html"
+SHOTS = "/home/claude/gamebuild/shots/"
 errors = []
 
 def check(cond, msg):
@@ -134,7 +133,7 @@ with sync_playwright() as p:
     # ================= 총론 =================
     pg.click('.subject-btn[data-subject="cr"]'); pg.wait_for_timeout(100)
     check(pg.inner_text("#appTitle").startswith("📘") and E("playMode") == "crA", "cr subject A")
-    check("/324" in pg.inner_text("#progress"), "cr A deck 324: " + pg.inner_text("#progress"))
+    check("/339" in pg.inner_text("#progress"), "cr A deck 339: " + pg.inner_text("#progress"))
     E("forcedNext = MODES.crA.byName['炙法 — 약재 › 薑炙法']; nextQuestion();")
     check(pg.inner_text("#targetPrescription") == "薑炙法" and "炙法 — 약재" in pg.inner_text("#targetNo"), "cr A question display")
     shelf = E("shelfItems.length")

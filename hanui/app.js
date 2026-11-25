@@ -3,8 +3,8 @@ window.startHanui = function(D, JD, hooks){
 hooks = hooks || {};
 const ITEMS = D.items, BYID = {}; ITEMS.forEach(i => BYID[i.id] = i);
 const CH = D.chapters;
-const PARTS = ['개념','기출','자체','복습'];
-const PARTNAME = {'개념':'개념 확인','기출':'기출 변형','자체':'자체 제작','복습':'복습'};
+const PARTS = ['개념','기출','자체','복습','TIGER'];
+const PARTNAME = {'개념':'개념 확인','기출':'기출 변형','자체':'자체 제작','복습':'복습','TIGER':'TIGER 연말 단원별 문제'};
 const CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -208,7 +208,8 @@ function homeHTML(){
 /* ---------------- setup ---------------- */
 const P = S.prefs;
 function pdef(k, v){ if (P[k]===undefined) P[k] = v; return P[k]; }
-pdef('chs', CH.map(c=>c.n)); pdef('parts', PARTS.slice()); pdef('pool','all'); pdef('order','random'); pdef('shuffleOpts', true);
+pdef('chs', CH.map(c=>c.n)); pdef('parts', PARTS.slice());
+{ pdef('partsSeen', ['개념','기출','자체','복습']); const add = PARTS.filter(p => !P.partsSeen.includes(p)); if (add.length){ add.forEach(p => { if (!P.parts.includes(p)) P.parts.push(p); }); P.partsSeen = PARTS.slice(); } } pdef('pool','all'); pdef('order','random'); pdef('shuffleOpts', true);
 pdef('blank','choice'); pdef('mode','study'); pdef('count', 30); pdef('school','all');
 function chipGroup(name, opts, val, multi){
   return `<div class="chips" role="group">` + opts.map(([v,l]) => {

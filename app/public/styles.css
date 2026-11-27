@@ -552,3 +552,12 @@ p { margin: 0 0 0.6em; }
 .pick-hint.full { color: var(--hema); font-weight: 600; }
 .pick-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .pick-row .pick-hint { margin: 0 2px; }
+
+/* 문항 수 직접 입력 */
+.n-custom { display: inline-flex; align-items: center; gap: 4px; padding: 0 12px 0 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); font-size: 0.9em; }
+.n-custom input { width: 3.6em; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: right; padding: 7px 2px; outline: none; }
+.n-custom.on { border-color: var(--hema); color: var(--ink); box-shadow: 0 0 0 1px var(--hema) inset; }
+.n-custom:focus-within { border-color: var(--hema); }
+/* 오답노트·찍은 문제 범위 좁히기 */
+.narrow-btn { display: inline-block; margin: 10px 0 2px; }
+.filters.narrow { margin: 4px 0 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }

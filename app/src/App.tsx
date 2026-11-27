@@ -58,6 +58,115 @@ const sessionMode = (s: Session) => (s.paper ? "종이" : s.kind === "round" ? "
 
 /** 단원 이름들 → 주소에 넣을 번호 목록 */
 const topicParam = (names: string[]) => names.map((n) => TOPIC_NAMES.indexOf(n)).filter((i) => i >= 0).join(",");
+
+/* ───────── 문항 거르기(복습의 오답노트·찍은 문제·랜덤 문제가 같이 씀) ───────── */
+type QFilter = { books: string[]; type: string; src: string; topics: string[]; memo: boolean; unseen: boolean };
+const EMPTY_F: QFilter = { books: [], type: "", src: "", topics: [], memo: false, unseen: false };
+const hasMemo = (id: string) => !!store.get().notes?.[id]?.memo?.trim();
+function matchQ(q: Question, f: QFilter, stats: Record<string, unknown>): boolean {
+  return (
+    !q.hidden &&
+    (!f.books.length || f.books.includes(q.book_id)) &&
+    (!f.type || (q.type === "essay" ? "short" : q.type) === f.type) &&
+    (!f.src || (f.src === "none" ? !q.source : (q.source || "").startsWith(f.src))) &&
+    (!f.topics.length || f.topics.includes(q.topic || "")) &&
+    (!f.memo || hasMemo(q.id)) &&
+    (!f.unseen || !stats[q.id])
+  );
+}
+const fParams = (f: QFilter) =>
+  Object.entries({ book: f.books.join(","), type: f.type, src: f.src, t: topicParam(f.topics), memo: f.memo ? "1" : "", unseen: f.unseen ? "1" : "" })
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&");
+function fFromQuery(query: URLSearchParams): QFilter {
+  return {
+    books: (query.get("book") || "").split(",").filter(Boolean),
+    type: query.get("type") || "",
+    src: query.get("src") || "",
+    topics: (query.get("t") || "").split(",").filter(Boolean).map((i) => TOPIC_NAMES[Number(i)]).filter(Boolean),
+    memo: query.get("memo") === "1",
+    unseen: query.get("unseen") === "1",
+  };
+}
+const fActive = (f: QFilter) => !!(f.books.length || f.type || f.src || f.topics.length || f.memo || f.unseen);
+
+/** 문제집·단원·유형·출처·메모 거르기 칩. show로 보일 줄을 고른다 */
+function FilterRows({ db, f, set, show, weak = [], ids }: {
+  db: DB; f: QFilter; set: (f: QFilter) => void; show: ("book" | "topic" | "type" | "src" | "memo" | "unseen")[]; weak?: string[]; ids?: string[];
+}) {
+  const tog = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  // ids가 있으면(오답노트·찍은 문제) 그 안에 있는 단원·문제집만 보여 준다
+  const inIds = ids ? ids.map((id) => db.q[id]).filter(Boolean) : null;
+  const topicList = inIds ? db.topics.filter((t) => inIds.some((q) => q.topic === t)) : db.topics;
+  const bookList = inIds ? db.books.filter((b) => inIds.some((q) => q.book_id === b.id)) : db.books;
+  const tcount = (t: string) => (inIds ? inIds.filter((q) => q.topic === t).length : 0);
+  const weakOn = weak.length > 0 && weak.length === f.topics.length && weak.every((t) => f.topics.includes(t));
+  return (
+    <>
+      {show.includes("book") && bookList.length > 1 ? (
+        <div className="filter-row">
+          <span className="f-label">문제집</span>
+          <div className="chips">
+            {bookList.map((b) => (
+              <button key={b.id} type="button" className={`chip-btn ${f.books.includes(b.id) ? "on" : ""}`} aria-pressed={f.books.includes(b.id)} onClick={() => set({ ...f, books: tog(f.books, b.id) })}>
+                {b.title.replace("BIOLOGY ", "").replace("SIMPLICITY ", "")}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {show.includes("topic") ? (
+        <div className="filter-row">
+          <span className="f-label">단원</span>
+          <div className="chips">
+            <button type="button" className={`chip-btn ${!f.topics.length ? "on" : ""}`} aria-pressed={!f.topics.length} onClick={() => set({ ...f, topics: [] })}>전체</button>
+            {weak.length ? (
+              <button type="button" className={`chip-btn weak ${weakOn ? "on" : ""}`} aria-pressed={weakOn} onClick={() => set({ ...f, topics: weakOn ? [] : weak })}>약한 단원</button>
+            ) : null}
+            {topicList.map((t) => (
+              <button key={t} type="button" className={`chip-btn ${f.topics.includes(t) ? "on" : ""}`} aria-pressed={f.topics.includes(t)} title={t} onClick={() => set({ ...f, topics: tog(f.topics, t) })}>
+                {topicShort(t)}{inIds ? ` ${tcount(t)}` : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {show.includes("type") ? (
+        <div className="filter-row">
+          <span className="f-label">유형</span>
+          <div className="chips">
+            {[["", "전체"], ["mcq", "객관식"], ["blank", "빈칸"], ["short", "주관식"]].map(([v, l]) => (
+              <button key={v} type="button" className={`chip-btn ${f.type === v ? "on" : ""}`} aria-pressed={f.type === v} onClick={() => set({ ...f, type: v })}>{l}</button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {show.includes("src") ? (
+        <div className="filter-row">
+          <span className="f-label">출처</span>
+          <div className="chips">
+            {[["", "전체"], ["공무원", "공무원"], ["중앙대", "중앙대"], ["none", "표시 없음"]].map(([v, l]) => (
+              <button key={v} type="button" className={`chip-btn ${f.src === v ? "on" : ""}`} aria-pressed={f.src === v} onClick={() => set({ ...f, src: v })}>{l}</button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {show.includes("memo") ? (
+        <label className="check">
+          <input type="checkbox" checked={f.memo} onChange={(e) => set({ ...f, memo: e.target.checked })} />
+          메모를 남긴 문항만
+        </label>
+      ) : null}
+      {show.includes("unseen") ? (
+        <label className="check">
+          <input type="checkbox" checked={f.unseen} onChange={(e) => set({ ...f, unseen: e.target.checked })} />
+          안 풀어 본 문항만
+        </label>
+      ) : null}
+    </>
+  );
+}
 const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
 
 /* ───────── 오늘 ───────── */
@@ -403,28 +512,32 @@ function Play({ db, path, query }: { db: DB; path: string[]; query: URLSearchPar
     if (what === "wrong") {
       const wt = (query.get("wt") || "") as WrongType | "none" | "";
       const label = wt === "none" ? "유형 미선택" : wrongTypeLabel((wt || undefined) as WrongType | undefined);
-      return { kind: mode === "flash" ? "flash" : "practice", title: label ? `오답노트 · ${label}` : "오답노트", qids: shuffle(wrongNoteIds(db, wt || undefined)), back: "/review" };
+      const f = fFromQuery(query);
+      const stats = qStats();
+      const sub = f.topics.length === 1 ? topicShort(f.topics[0]) : "";
+      const title = ["오답노트", label, sub].filter(Boolean).join(" · ");
+      return { kind: mode === "flash" ? "flash" : "practice", title, qids: shuffle(wrongNoteIds(db, wt || undefined).filter((id) => db.q[id] && matchQ(db.q[id], f, stats))), back: "/review" };
     }
-    if (what === "bookmarks")
-      return { kind: mode === "flash" ? "flash" : "practice", title: "찍은 문제", qids: shuffle(bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden)), back: "/review" };
+    if (what === "bookmarks") {
+      const f = fFromQuery(query);
+      const stats = qStats();
+      const sub = f.topics.length === 1 ? topicShort(f.topics[0]) : "";
+      return {
+        kind: mode === "flash" ? "flash" : "practice",
+        title: ["찍은 문제", sub].filter(Boolean).join(" · "),
+        qids: shuffle(bookmarkedIds(st).filter((id) => db.q[id] && matchQ(db.q[id], f, stats))),
+        back: "/review",
+      };
+    }
     if (what === "random") {
-      const books = (query.get("book") || "").split(",").filter(Boolean);
-      const types = (query.get("type") || "").split(",").filter(Boolean);
-      const src = query.get("src") || "";
-      const n = Number(query.get("n") || 15);
-      const unseen = query.get("unseen") === "1";
-      const topics = (query.get("t") || "").split(",").filter(Boolean).map((i) => TOPIC_NAMES[Number(i)]).filter(Boolean);
+      const f = fFromQuery(query);
+      const topics = f.topics;
+      // n=0 또는 'all' = 조건에 맞는 문항 전부
+      const nRaw = query.get("n");
+      const n = nRaw === "all" || nRaw === "0" ? Infinity : Number(nRaw || 15) || 15;
       const focus = query.get("focus") === "1";
       const stats = qStats();
-      const pool = db.questions.filter(
-        (q) =>
-          !q.hidden &&
-          (!books.length || books.includes(q.book_id)) &&
-          (!types.length || types.includes(q.type === "essay" ? "short" : q.type)) &&
-          (!src || (src === "none" ? !q.source : (q.source || "").startsWith(src))) &&
-          (!topics.length || topics.includes(q.topic || "")) &&
-          (!unseen || !stats[q.id]),
-      );
+      const pool = db.questions.filter((q) => matchQ(q, f, stats));
       // focus: 최근에 틀린 것 → 안 풀어 본 것 → 나머지 순으로 섞는다
       const rank = (id: string) => (!stats[id] ? 1 : stats[id].last === false ? 0 : 2);
       const ordered = focus ? [0, 1, 2].flatMap((r) => shuffle(pool.filter((q) => rank(q.id) === r))) : shuffle(pool);
@@ -595,30 +708,33 @@ function NotesPage({ db, query }: { db: DB; query: URLSearchParams }) {
 
 function Review({ db }: { db: DB }) {
   const st = useStore();
-  const wrong = wrongNoteIds(db);
-  const bm = bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden);
+  const stats = qStats();
+  const wrongAll = wrongNoteIds(db);
+  const bmAll = bookmarkedIds(st).filter((id) => db.q[id] && !db.q[id].hidden);
   const [wt, setWt] = useState<WrongType | "none" | "">("");
   const wcount = wrongTypeCounts(db);
-  const wsel = wt ? wcount[wt] : wrong.length;
-  const [books, setBooks] = useState<string[]>([]);
-  const [type, setType] = useState("");
-  const [src, setSrc] = useState("");
-  const [n, setN] = useState(15);
-  const [unseen, setUnseen] = useState(false);
-  const [topics, setTopics] = useState<string[]>([]);
+  // 오답노트·찍은 문제 거르기
+  const [wf, setWf] = useState<QFilter>(EMPTY_F);
+  const [bf, setBf] = useState<QFilter>(EMPTY_F);
+  const [wOpen, setWOpen] = useState(false);
+  const [bOpen, setBOpen] = useState(false);
+  const wsel = wrongNoteIds(db, wt || undefined).filter((id) => db.q[id] && matchQ(db.q[id], wf, stats)).length;
+  const bsel = bmAll.filter((id) => matchQ(db.q[id], bf, stats)).length;
+  const wq = [wt ? `wt=${wt}` : "", fParams(wf)].filter(Boolean).join("&");
+  const bq = fParams(bf);
+  // 랜덤 문제
+  const [rf, setRf] = useState<QFilter>(EMPTY_F);
+  const [n, setN] = useState<number | "all">(15);
+  const [custom, setCustom] = useState("");
   const weak = weakTopics(db);
-  const stats = qStats();
-  const pool = db.questions.filter(
-    (q) =>
-      !q.hidden &&
-      (!books.length || books.includes(q.book_id)) &&
-      (!type || (q.type === "essay" ? "short" : q.type) === type) &&
-      (!src || (src === "none" ? !q.source : (q.source || "").startsWith(src))) &&
-      (!topics.length || topics.includes(q.topic || "")) &&
-      (!unseen || !stats[q.id]),
-  ).length;
-  const qs = new URLSearchParams({ book: books.join(","), type, src, n: String(n), unseen: unseen ? "1" : "", t: topicParam(topics) });
-  const weakOn = weak.length > 0 && weak.length === topics.length && weak.every((t) => topics.includes(t));
+  const pool = db.questions.filter((q) => matchQ(q, rf, stats)).length;
+  const take = n === "all" ? pool : Math.min(n, pool);
+  const rq = [fParams(rf), `n=${n}`].filter(Boolean).join("&");
+  function setCustomN(v: string) {
+    const clean = v.replace(/[^0-9]/g, "").slice(0, 4);
+    setCustom(clean);
+    if (Number(clean) > 0) setN(Number(clean));
+  }
 
   return (
     <main className="page">
@@ -627,11 +743,11 @@ function Review({ db }: { db: DB }) {
       <section className="review-block" aria-labelledby="wn-t">
         <div className="rb-head">
           <h2 id="wn-t" className="section-title">오답노트</h2>
-          <span className="rb-count ng-text">{wrong.length}</span>
+          <span className="rb-count ng-text">{wrongAll.length}</span>
         </div>
-        <p className="meta">틀린 문항이 모여요. 이어서 2번 연속 맞히면 빠져요. 유형을 고르면 그 유형만 풀어요.</p>
+        <p className="meta">틀린 문항이 모여요. 이어서 2번 연속 맞히면 빠져요. 오답 유형이나 단원을 고르면 그것만 풀어요.</p>
         <div className="chips wt-chips" role="group" aria-label="오답 유형">
-          <button type="button" className={`chip-btn ${!wt ? "on" : ""}`} aria-pressed={!wt} onClick={() => setWt("")}>전체 {wrong.length}</button>
+          <button type="button" className={`chip-btn ${!wt ? "on" : ""}`} aria-pressed={!wt} onClick={() => setWt("")}>전체 {wrongAll.length}</button>
           {WRONG_TYPES.filter((t) => t.id !== "flawed").map((t) => (
             <button key={t.id} type="button" className={`chip-btn ${wt === t.id ? "on" : ""}`} aria-pressed={wt === t.id} disabled={!wcount[t.id]} title={t.hint} onClick={() => setWt(t.id)}>
               {t.label} {wcount[t.id]}
@@ -641,9 +757,20 @@ function Review({ db }: { db: DB }) {
             <button type="button" className={`chip-btn quiet ${wt === "none" ? "on" : ""}`} aria-pressed={wt === "none"} onClick={() => setWt("none")}>유형 미선택 {wcount.none}</button>
           ) : null}
         </div>
+        <button type="button" className="link-btn narrow-btn" aria-expanded={wOpen} onClick={() => setWOpen(!wOpen)}>
+          {wOpen ? "범위 좁히기 접기" : `단원·문제 유형·메모로 좁히기${fActive(wf) ? " (적용 중)" : ""}`}
+        </button>
+        {wOpen ? (
+          <fieldset className="filters narrow">
+            <legend className="sr-only">오답노트 범위</legend>
+            <FilterRows db={db} f={wf} set={setWf} show={["book", "topic", "type", "memo"]} ids={wrongAll} />
+            {fActive(wf) ? <button type="button" className="link-btn" onClick={() => setWf(EMPTY_F)}>조건 지우기</button> : null}
+          </fieldset>
+        ) : null}
+        <p className="meta">고른 조건에 맞는 문항 {wsel}개</p>
         <div className="row">
-          <button type="button" className="btn primary" disabled={!wsel} onClick={() => go(`/play/wrong?mode=practice${wt ? `&wt=${wt}` : ""}`)}>다시 풀기</button>
-          <button type="button" className="btn ghost" disabled={!wsel} onClick={() => go(`/play/wrong?mode=flash${wt ? `&wt=${wt}` : ""}`)}>카드로 넘기기</button>
+          <button type="button" className="btn primary" disabled={!wsel} onClick={() => go(`/play/wrong?mode=practice${wq ? `&${wq}` : ""}`)}>다시 풀기</button>
+          <button type="button" className="btn ghost" disabled={!wsel} onClick={() => go(`/play/wrong?mode=flash${wq ? `&${wq}` : ""}`)}>카드로 넘기기</button>
           <a className="btn ghost" href={`#/notes${wt ? `?wt=${wt}` : ""}`}>메모 모아 보기</a>
         </div>
       </section>
@@ -651,12 +778,23 @@ function Review({ db }: { db: DB }) {
       <section className="review-block" aria-labelledby="bm-t">
         <div className="rb-head">
           <h2 id="bm-t" className="section-title">찍은 문제</h2>
-          <span className="rb-count">{bm.length}</span>
+          <span className="rb-count">{bmAll.length}</span>
         </div>
         <p className="meta">풀면서 문항 오른쪽 위 '찍음'을 누르거나, 맞힌 뒤 '확신 없이 맞혔나요?'에서 고르면 여기에 모여요. 시험 결과 화면에서는 펼쳐진 채로 보여요.</p>
+        <button type="button" className="link-btn narrow-btn" aria-expanded={bOpen} onClick={() => setBOpen(!bOpen)}>
+          {bOpen ? "범위 좁히기 접기" : `단원·문제 유형·메모로 좁히기${fActive(bf) ? " (적용 중)" : ""}`}
+        </button>
+        {bOpen ? (
+          <fieldset className="filters narrow">
+            <legend className="sr-only">찍은 문제 범위</legend>
+            <FilterRows db={db} f={bf} set={setBf} show={["book", "topic", "type", "memo"]} ids={bmAll} />
+            {fActive(bf) ? <button type="button" className="link-btn" onClick={() => setBf(EMPTY_F)}>조건 지우기</button> : null}
+          </fieldset>
+        ) : null}
+        {fActive(bf) ? <p className="meta">고른 조건에 맞는 문항 {bsel}개</p> : null}
         <div className="row">
-          <button type="button" className="btn primary" disabled={!bm.length} onClick={() => go("/play/bookmarks?mode=practice")}>다시 풀기</button>
-          <button type="button" className="btn ghost" disabled={!bm.length} onClick={() => go("/play/bookmarks?mode=flash")}>카드로 넘기기</button>
+          <button type="button" className="btn primary" disabled={!bsel} onClick={() => go(`/play/bookmarks?mode=practice${bq ? `&${bq}` : ""}`)}>다시 풀기</button>
+          <button type="button" className="btn ghost" disabled={!bsel} onClick={() => go(`/play/bookmarks?mode=flash${bq ? `&${bq}` : ""}`)}>카드로 넘기기</button>
         </div>
       </section>
 
@@ -664,65 +802,27 @@ function Review({ db }: { db: DB }) {
         <h2 id="rd-t" className="section-title">랜덤 문제</h2>
         <fieldset className="filters">
           <legend className="sr-only">범위</legend>
-          <div className="filter-row">
-            <span className="f-label">문제집</span>
-            <div className="chips">
-              {db.books.map((b) => (
-                <button key={b.id} type="button" className={`chip-btn ${books.includes(b.id) ? "on" : ""}`} aria-pressed={books.includes(b.id)}
-                  onClick={() => setBooks(books.includes(b.id) ? books.filter((x) => x !== b.id) : [...books, b.id])}>
-                  {b.title.replace("BIOLOGY ", "").replace("SIMPLICITY ", "")}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-row">
-            <span className="f-label">단원</span>
-            <div className="chips">
-              <button type="button" className={`chip-btn ${!topics.length ? "on" : ""}`} aria-pressed={!topics.length} onClick={() => setTopics([])}>전체</button>
-              {weak.length ? (
-                <button type="button" className={`chip-btn weak ${weakOn ? "on" : ""}`} aria-pressed={weakOn} onClick={() => setTopics(weakOn ? [] : weak)}>약한 단원</button>
-              ) : null}
-              {db.topics.map((t) => (
-                <button key={t} type="button" className={`chip-btn ${topics.includes(t) ? "on" : ""}`} aria-pressed={topics.includes(t)} title={t}
-                  onClick={() => setTopics(topics.includes(t) ? topics.filter((x) => x !== t) : [...topics, t])}>
-                  {topicShort(t)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-row">
-            <span className="f-label">유형</span>
-            <div className="chips">
-              {[["", "전체"], ["mcq", "객관식"], ["blank", "빈칸"], ["short", "주관식"]].map(([v, l]) => (
-                <button key={v} type="button" className={`chip-btn ${type === v ? "on" : ""}`} aria-pressed={type === v} onClick={() => setType(v)}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-row">
-            <span className="f-label">출처</span>
-            <div className="chips">
-              {[["", "전체"], ["공무원", "공무원"], ["중앙대", "중앙대"], ["none", "표시 없음"]].map(([v, l]) => (
-                <button key={v} type="button" className={`chip-btn ${src === v ? "on" : ""}`} aria-pressed={src === v} onClick={() => setSrc(v)}>{l}</button>
-              ))}
-            </div>
-          </div>
+          <FilterRows db={db} f={rf} set={setRf} show={["book", "topic", "type", "src"]} weak={weak} />
           <div className="filter-row">
             <span className="f-label">문항 수</span>
             <div className="chips">
               {[10, 15, 30].map((v) => (
-                <button key={v} type="button" className={`chip-btn ${n === v ? "on" : ""}`} aria-pressed={n === v} onClick={() => setN(v)}>{v}</button>
+                <button key={v} type="button" className={`chip-btn ${n === v && !custom ? "on" : ""}`} aria-pressed={n === v && !custom} onClick={() => { setN(v); setCustom(""); }}>{v}</button>
               ))}
+              <button type="button" className={`chip-btn ${n === "all" ? "on" : ""}`} aria-pressed={n === "all"} onClick={() => { setN("all"); setCustom(""); }}>전부</button>
+              <label className={`n-custom ${custom ? "on" : ""}`}>
+                <span className="sr-only">직접 입력</span>
+                <input inputMode="numeric" placeholder="직접" value={custom} onChange={(e) => setCustomN(e.target.value)} onBlur={() => { if (!Number(custom)) { setCustom(""); if (typeof n === "number" && ![10, 15, 30].includes(n)) setN(15); } }} />
+                <span aria-hidden="true">개</span>
+              </label>
             </div>
           </div>
-          <label className="check">
-            <input type="checkbox" checked={unseen} onChange={(e) => setUnseen(e.target.checked)} />
-            안 풀어 본 문항만
-          </label>
+          <FilterRows db={db} f={rf} set={setRf} show={["memo", "unseen"]} />
         </fieldset>
-        <p className="meta">조건에 맞는 문항 {pool}개</p>
+        <p className="meta">조건에 맞는 문항 {pool}개{pool ? ` · ${take}개 풀기` : ""}</p>
         <div className="row">
-          <button type="button" className="btn primary" disabled={!pool} onClick={() => go(`/play/random?${qs}&mode=practice`)}>풀기</button>
-          <button type="button" className="btn ghost" disabled={!pool} onClick={() => go(`/play/random?${qs}&mode=flash`)}>카드로 넘기기</button>
+          <button type="button" className="btn primary" disabled={!pool} onClick={() => go(`/play/random?${rq}&mode=practice`)}>풀기</button>
+          <button type="button" className="btn ghost" disabled={!pool} onClick={() => go(`/play/random?${rq}&mode=flash`)}>카드로 넘기기</button>
         </div>
       </section>
     </main>
